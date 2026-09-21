@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.PieChart
@@ -35,6 +36,7 @@ import com.example.apptaichinh.ui.components.EditCategoryDialog
 import com.example.apptaichinh.ui.screens.AnalyticsScreen
 import com.example.apptaichinh.ui.screens.BudgetScreen
 import com.example.apptaichinh.ui.screens.CategoryScreen
+import com.example.apptaichinh.ui.screens.ChatAssistantScreen
 import com.example.apptaichinh.ui.screens.HomeScreen
 import com.example.apptaichinh.ui.viewmodel.FinanceViewModel
 
@@ -88,19 +90,27 @@ fun MainApp(
                     selected = currentTab == 3,
                     onClick = { viewModel.setCurrentTab(3) }
                 )
+                NavigationBarItem(
+                    icon = { Icon(Icons.Default.AutoAwesome, contentDescription = "Trợ Lý AI") },
+                    label = { Text("Trợ Lý AI") },
+                    selected = currentTab == 4,
+                    onClick = { viewModel.setCurrentTab(4) }
+                )
             }
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = {
-                    editingTx = null
-                    showAddTxSheet = true
-                },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = Color.White,
-                shape = CircleShape
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Thêm Giao Dịch")
+            if (currentTab != 4) {
+                FloatingActionButton(
+                    onClick = {
+                        editingTx = null
+                        showAddTxSheet = true
+                    },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = Color.White,
+                    shape = CircleShape
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Thêm Giao Dịch")
+                }
             }
         }
     ) { innerPadding ->
@@ -116,7 +126,8 @@ fun MainApp(
                         editingTx = tx
                         showAddTxSheet = true
                     },
-                    onOpenBudgetEdit = { showOverallBudgetDialog = true }
+                    onOpenBudgetEdit = { showOverallBudgetDialog = true },
+                    onOpenChat = { viewModel.setCurrentTab(4) }
                 )
 
                 1 -> BudgetScreen(
@@ -141,6 +152,10 @@ fun MainApp(
                         editingCategory = cat
                         showAddCategoryDialog = true
                     }
+                )
+
+                4 -> ChatAssistantScreen(
+                    viewModel = viewModel
                 )
             }
         }

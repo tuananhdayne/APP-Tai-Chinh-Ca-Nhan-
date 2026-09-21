@@ -44,6 +44,8 @@ class FinanceDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABA
         const val COL_SETTING_KEY = "key"
         const val COL_SETTING_VAL = "value"
         const val SETTING_TOTAL_BUDGET = "total_monthly_budget"
+        const val SETTING_AI_SERVER_URL = "ai_server_url"
+        const val SETTING_AI_MODEL = "ai_model_name"
 
         @Volatile
         private var instance: FinanceDatabaseHelper? = null
@@ -445,6 +447,93 @@ class FinanceDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABA
             put(COL_SETTING_VAL, amount.toString())
         }
         db.insertWithOnConflict(TABLE_SETTINGS, null, cv, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    fun getAiServerUrl(): String {
+        val db = readableDatabase
+        val cursor = db.query(TABLE_SETTINGS, arrayOf(COL_SETTING_VAL), "$COL_SETTING_KEY = ?", arrayOf(SETTING_AI_SERVER_URL), null, null, null)
+        cursor.use {
+            if (it.moveToFirst()) {
+                val url = it.getString(0)
+                if (url.isNotBlank()) return url
+            }
+        }
+        return "http://10.0.2.2:1234"
+    }
+
+    fun setAiServerUrl(url: String) {
+        val db = writableDatabase
+        val cv = ContentValues().apply {
+            put(COL_SETTING_KEY, SETTING_AI_SERVER_URL)
+            put(COL_SETTING_VAL, url.trim())
+        }
+        db.insertWithOnConflict(TABLE_SETTINGS, null, cv, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    fun getAiModelName(): String {
+        val db = readableDatabase
+        val cursor = db.query(TABLE_SETTINGS, arrayOf(COL_SETTING_VAL), "$COL_SETTING_KEY = ?", arrayOf(SETTING_AI_MODEL), null, null, null)
+        cursor.use {
+            if (it.moveToFirst()) {
+                val model = it.getString(0)
+                if (model.isNotBlank()) return model
+            }
+        }
+        return "qwen2.5-3b-instruct"
+    }
+
+    fun setAiModelName(model: String) {
+        val db = writableDatabase
+        val cv = ContentValues().apply {
+            put(COL_SETTING_KEY, SETTING_AI_MODEL)
+            put(COL_SETTING_VAL, model.trim())
+        }
+        db.insertWithOnConflict(TABLE_SETTINGS, null, cv, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    fun searchTransactions(keyword: String, amount: Long? = null): List<Transaction> {
+        val list = mutableListOf<Transaction>()
+        val db = readableDatabase
+        val queryBuilder = StringBuilder("""
+            SELECT t.*, c.$COL_CAT_NAME, c.$COL_CAT_ICON, c.$COL_CAT_COLOR
+            FROM $TABLE_TRANSACTIONS t
+            INNER JOIN $TABLE_CATEGORIES c ON t.$COL_TX_CAT_ID = c.$COL_CAT_ID
+            WHERE 1=1
+        """.trimIndent())
+        val args = mutableListOf<String>()
+
+        if (keyword.isNotBlank()) {
+            queryBuilder.append(" AND (t.$COL_TX_NOTE LIKE ? OR c.$COL_CAT_NAME LIKE ?)")
+            args.add("%$keyword%")
+            args.add("%$keyword%")
+        }
+
+        if (amount != null && amount > 0) {
+            queryBuilder.append(" AND t.$COL_TX_AMOUNT = ?")
+            args.add(amount.toString())
+        }
+
+        queryBuilder.append(" ORDER BY t.$COL_TX_DATE DESC LIMIT 10")
+
+        val cursor = db.rawQuery(queryBuilder.toString(), args.toTypedArray())
+        cursor.use {
+            while (it.moveToNext()) {
+                list.add(
+                    Transaction(
+                        id = it.getLong(it.getColumnIndexOrThrow(COL_TX_ID)),
+                        amount = it.getLong(it.getColumnIndexOrThrow(COL_TX_AMOUNT)),
+                        type = it.getString(it.getColumnIndexOrThrow(COL_TX_TYPE)),
+                        categoryId = it.getLong(it.getColumnIndexOrThrow(COL_TX_CAT_ID)),
+                        categoryName = it.getString(it.getColumnIndexOrThrow(COL_CAT_NAME)),
+                        categoryIcon = it.getString(it.getColumnIndexOrThrow(COL_CAT_ICON)),
+                        categoryColorHex = it.getString(it.getColumnIndexOrThrow(COL_CAT_COLOR)),
+                        note = it.getString(it.getColumnIndexOrThrow(COL_TX_NOTE)) ?: "",
+                        dateEpoch = it.getLong(it.getColumnIndexOrThrow(COL_TX_DATE))
+                    )
+                )
+            }
+        }
+        return list
     }
 
     fun getOverallBudget(year: Int, month: Int): OverallBudget {

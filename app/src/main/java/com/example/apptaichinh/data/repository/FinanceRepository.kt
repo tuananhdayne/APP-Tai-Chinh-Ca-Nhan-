@@ -53,6 +53,28 @@ class FinanceRepository private constructor(context: Context) {
     private val _categories = MutableStateFlow<List<Category>>(emptyList())
     val categories: StateFlow<List<Category>> = _categories.asStateFlow()
 
+    val aiService = com.example.apptaichinh.data.ai.AiService(dbHelper)
+
+    private val _aiServerUrl = MutableStateFlow(dbHelper.getAiServerUrl())
+    val aiServerUrl: StateFlow<String> = _aiServerUrl.asStateFlow()
+
+    private val _aiModelName = MutableStateFlow(dbHelper.getAiModelName())
+    val aiModelName: StateFlow<String> = _aiModelName.asStateFlow()
+
+    fun setAiServerUrl(url: String) {
+        dbHelper.setAiServerUrl(url)
+        _aiServerUrl.value = url.trim()
+    }
+
+    fun setAiModelName(model: String) {
+        dbHelper.setAiModelName(model)
+        _aiModelName.value = model.trim()
+    }
+
+    fun searchTransactions(keyword: String, amount: Long? = null): List<Transaction> {
+        return dbHelper.searchTransactions(keyword, amount)
+    }
+
     init {
         refreshAll()
     }

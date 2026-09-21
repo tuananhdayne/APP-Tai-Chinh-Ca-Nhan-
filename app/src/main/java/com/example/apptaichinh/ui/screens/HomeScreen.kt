@@ -32,6 +32,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import com.example.apptaichinh.data.model.Transaction
 import com.example.apptaichinh.ui.components.BalanceSummaryCard
 import com.example.apptaichinh.ui.components.MonthSelector
@@ -44,6 +54,7 @@ fun HomeScreen(
     viewModel: FinanceViewModel,
     onEditTransaction: (Transaction) -> Unit,
     onOpenBudgetEdit: () -> Unit,
+    onOpenChat: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val year by viewModel.selectedYear.collectAsState()
@@ -69,6 +80,60 @@ fun HomeScreen(
                 onPrev = { viewModel.prevMonth() },
                 onNext = { viewModel.nextMonth() }
             )
+        }
+
+        // Lối tắt vào Trợ Lý AI
+        item {
+            Card(
+                onClick = onOpenChat,
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "Trợ Lý AI (Qwen 2.5)",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Nhập 'Ăn phở 45k', 'Xóa tiền phở' để tự xử lý",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        }
+                    }
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
         }
 
         // 2. Card Tổng Quan Số Dư
