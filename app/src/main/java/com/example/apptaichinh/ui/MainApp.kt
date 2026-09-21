@@ -1,6 +1,7 @@
 package com.example.apptaichinh.ui
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -118,7 +119,7 @@ fun MainApp(
             }
         }
     ) { innerPadding ->
-        Box(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
@@ -159,14 +160,13 @@ fun MainApp(
                 )
             }
 
-            // Bong bóng Trợ Lý AI nổi trên màn hình (Floating Chat Bubble)
+            // Bong bóng Trợ Lý AI nổi trên màn hình (Floating Chat Bubble - Tự do kéo di chuyển)
             if (!showAiChatWindow) {
                 AiChatBubble(
+                    containerWidth = maxWidth,
+                    containerHeight = maxHeight,
                     onClick = { showAiChatWindow = true },
-                    isThinking = isAiThinking,
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(bottom = 80.dp, end = 16.dp)
+                    isThinking = isAiThinking
                 )
             }
         }
