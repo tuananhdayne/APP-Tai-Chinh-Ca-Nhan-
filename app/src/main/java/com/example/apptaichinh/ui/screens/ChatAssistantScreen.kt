@@ -78,6 +78,7 @@ import com.example.apptaichinh.ui.viewmodel.FinanceViewModel
 @Composable
 fun ChatAssistantScreen(
     viewModel: FinanceViewModel,
+    onClose: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val messages by viewModel.chatMessages.collectAsState()
@@ -102,6 +103,17 @@ fun ChatAssistantScreen(
     Scaffold(
         topBar = {
             TopAppBar(
+                navigationIcon = {
+                    if (onClose != null) {
+                        IconButton(onClick = onClose) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Đóng",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                },
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
