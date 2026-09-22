@@ -699,4 +699,157 @@ class AiBudgetAndUserInputsComprehensiveTest {
         assertFalse(sanitized.contains("**"))
         assertFalse(sanitized.contains("`"))
     }
+
+    @Test
+    fun testCleanNote_ConciseAndRemovesFillers() {
+        // 1. Câu dài có từ đệm mở đầu và kết thúc + số tiền
+        val note1 = AiService.cleanNote("", "Trưa nay mình đi ăn bát phở bò hết 45k xong", "Ăn uống")
+        assertEquals("Ăn bát phở bò", note1)
+
+        // 2. Câu đổ xăng có từ "hôm nay" và số tiền "70 nghìn"
+        val note2 = AiService.cleanNote("", "Hôm nay mình đổ xăng xe máy 70 nghìn nhé", "Đi lại")
+        assertEquals("Đổ xăng xe máy", note2)
+
+        // 3. Câu mua sắm shopee
+        val note3 = AiService.cleanNote("", "Vừa mua cái áo thun shopee 150k nha", "Mua sắm")
+        assertEquals("Mua cái áo thun shopee", note3)
+
+        // 4. Khi LLM đã đưa ra note ngắn gọn sẵn
+        val note4 = AiService.cleanNote("Ăn phở tái nạm", "Hôm nay ăn phở tái nạm hết 50k", "Ăn uống")
+        assertEquals("Ăn phở tái nạm", note4)
+
+        // 5. Khi người dùng chỉ nhập số tiền (VD: "50k") -> fallback về tên danh mục
+        val note5 = AiService.cleanNote("", "50k", "Ăn uống")
+        assertEquals("Ăn uống", note5)
+
+        // 6. Tiền thưởng
+        val note6 = AiService.cleanNote("", "Tiền thưởng dự án 2tr", "Thưởng")
+        assertEquals("Thưởng dự án", note6)
+
+        // 7. Khắc phục triệt để lỗi "1 triệu" bị nuốt "1 tr" chừa lại "iệu" (VD: "Đóng tiền điện iệu")
+        val note7 = AiService.cleanNote("", "đóng tiền điện 1 triệu", "Nhà ở")
+        assertEquals("Đóng tiền điện", note7)
+
+        // 8. Khắc phục từ đệm "nay" mở đầu câu
+        val note8 = AiService.cleanNote("", "nay ăn sáng 200k", "Ăn uống")
+        assertEquals("Ăn sáng", note8)
+    }
+
+    // =========================================================================
+    // PHẦN 8: KIỂM THỬ XỬ LÝ ĐA GIAO DỊCH (MULTI-ACTIONS - TỐI ĐA 6 KHOẢN)
+    // =========================================================================
+
+    @Test
+    fun testSplitMultiItemText_UserExample_BreakfastGasElectricity_NoCommaBetweenFirstTwo() {
+        // Đúng nguyên văn câu người dùng báo lỗi: "nay ăn sáng 200k đổ xăng 100k , đóng tiền điện 1 triệu"
+        val input = "nay ăn sáng 200k đổ xăng 100k , đóng tiền điện 1 triệu"
+        val clauses = LocalToolExecutor.splitMultiItemText(input)
+
+        assertEquals(3, clauses.size)
+        assertEquals("nay ăn sáng 200k", clauses[0])
+        assertEquals("đổ xăng 100k", clauses[1])
+        assertEquals("đóng tiền điện 1 triệu", clauses[2])
+
+        val amount1 = LocalToolExecutor.extractAmountFromText(clauses[0])
+        val amount2 = LocalToolExecutor.extractAmountFromText(clauses[1])
+        val amount3 = LocalToolExecutor.extractAmountFromText(clauses[2])
+
+        assertEquals(200000L, amount1)
+        assertEquals(100000L, amount2)
+        assertEquals(1000000L, amount3)
+
+        val cat1 = LocalToolExecutor.matchBestCategory(clauses[0], "EXPENSE", defaultCategories).first
+        val cat2 = LocalToolExecutor.matchBestCategory(clauses[1], "EXPENSE", defaultCategories).first
+        val cat3 = LocalToolExecutor.matchBestCategory(clauses[2], "EXPENSE", defaultCategories).first
+
+        assertEquals("Ăn uống", cat1?.name)
+        assertEquals("Đi lại", cat2?.name)
+        assertEquals("Nhà ở", cat3?.name)
+
+        val note1 = AiService.cleanNote("", clauses[0], cat1?.name ?: "")
+        val note2 = AiService.cleanNote("", clauses[1], cat2?.name ?: "")
+        val note3 = AiService.cleanNote("", clauses[2], cat3?.name ?: "")
+
+        assertEquals("Ăn sáng", note1)
+        assertEquals("Đổ xăng", note2)
+        assertEquals("Đóng tiền điện", note3)
+    }
+
+    @Test
+    fun testSplitMultiItemText_ZeroCommas_AllSpaces() {
+        val input = "nay ăn sáng 200k đổ xăng 100k đóng tiền điện 1 triệu"
+        val clauses = LocalToolExecutor.splitMultiItemText(input)
+
+        assertEquals(3, clauses.size)
+        assertEquals("nay ăn sáng 200k", clauses[0])
+        assertEquals("đổ xăng 100k", clauses[1])
+        assertEquals("đóng tiền điện 1 triệu", clauses[2])
+    }
+
+    @Test
+    fun testSplitMultiItemText_UserExample_HouseAndBreakfast() {
+        val input = "nay trả tiền thuê nhà hết 1000k , ăn sáng hết 20k"
+        val clauses = LocalToolExecutor.splitMultiItemText(input)
+
+        assertEquals(2, clauses.size)
+        assertEquals("nay trả tiền thuê nhà hết 1000k", clauses[0])
+        assertEquals("ăn sáng hết 20k", clauses[1])
+
+        val amount1 = LocalToolExecutor.extractAmountFromText(clauses[0])
+        val amount2 = LocalToolExecutor.extractAmountFromText(clauses[1])
+
+        assertEquals(1000000L, amount1)
+        assertEquals(20000L, amount2)
+
+        val cat1 = LocalToolExecutor.matchBestCategory(clauses[0], "EXPENSE", defaultCategories).first
+        val cat2 = LocalToolExecutor.matchBestCategory(clauses[1], "EXPENSE", defaultCategories).first
+
+        assertEquals("Nhà ở", cat1?.name)
+        assertEquals("Ăn uống", cat2?.name)
+    }
+
+    @Test
+    fun testSplitMultiItemText_UpToSixTransactions() {
+        val input = "tiền nhà 1000k, ăn sáng 20k, đổ xăng 50k, cafe 35k, mua áo 150k và xem phim 90k"
+        val clauses = LocalToolExecutor.splitMultiItemText(input)
+
+        assertEquals(6, clauses.size)
+
+        val amounts = clauses.mapNotNull { LocalToolExecutor.extractAmountFromText(it) }
+        assertEquals(listOf(1000000L, 20000L, 50000L, 35000L, 150000L, 90000L), amounts)
+    }
+
+    @Test
+    fun testSplitMultiItemText_SingleTransactionNotSplit() {
+        // Câu chỉ có 1 số tiền dù có chữ "và" thì không bị tách nhầm thành 2
+        val input = "mua bánh mì và sữa hết 30k"
+        val clauses = LocalToolExecutor.splitMultiItemText(input)
+
+        assertEquals(1, clauses.size)
+        assertEquals(input, clauses[0])
+        assertEquals(30000L, LocalToolExecutor.extractAmountFromText(clauses[0]))
+    }
+
+    @Test
+    fun testChatMessage_MultiToolActions_UpToSixActions() {
+        val actions = listOf(
+            ToolAction(type = ToolActionType.CREATE, amount = 1000000L, categoryName = "Nhà ở", note = "Tiền thuê nhà"),
+            ToolAction(type = ToolActionType.CREATE, amount = 20000L, categoryName = "Ăn uống", note = "Ăn sáng"),
+            ToolAction(type = ToolActionType.CREATE, amount = 50000L, categoryName = "Đi lại", note = "Đổ xăng"),
+            ToolAction(type = ToolActionType.CREATE, amount = 35000L, categoryName = "Giải trí", note = "Cà phê"),
+            ToolAction(type = ToolActionType.CREATE, amount = 150000L, categoryName = "Mua sắm", note = "Mua áo"),
+            ToolAction(type = ToolActionType.CREATE, amount = 90000L, categoryName = "Giải trí", note = "Xem phim")
+        )
+
+        val msg = ChatMessage(
+            sender = MessageSender.ASSISTANT,
+            text = "Đã nhận diện 6 khoản",
+            toolAction = actions.first(),
+            toolActions = actions
+        )
+
+        assertEquals(6, msg.allToolActions.size)
+        assertEquals(1345000L, msg.allToolActions.sumOf { it.amount })
+    }
 }
+

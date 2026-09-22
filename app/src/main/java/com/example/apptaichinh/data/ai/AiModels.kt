@@ -45,7 +45,10 @@ data class ToolAction(
     val newNote: String? = null,
 
     // Từ khóa tìm kiếm nếu không tìm thấy bản ghi khớp
-    val searchKeyword: String = ""
+    val searchKeyword: String = "",
+
+    // Trạng thái độc lập của từng thẻ trong chuỗi đa hành động (PENDING, CONFIRMED, CANCELLED)
+    val status: CardStatus = CardStatus.PENDING
 )
 
 /**
@@ -57,6 +60,28 @@ data class ChatMessage(
     val text: String,
     val timestamp: Long = System.currentTimeMillis(),
     val toolAction: ToolAction? = null,
+    val toolActions: List<ToolAction> = emptyList(), // Hỗ trợ danh sách tối đa 6 action
     val cardStatus: CardStatus = CardStatus.PENDING,
     val isErrorMessage: Boolean = false
-)
+) {
+    /**
+     * Danh sách toàn bộ tool actions (tương thích ngược với cả toolAction đơn lẻ)
+     */
+    val allToolActions: List<ToolAction>
+        get() = if (toolActions.isNotEmpty()) toolActions else listOfNotNull(toolAction)
+
+    /**
+     * Trạng thái tổng thể tự động:
+     * - Nếu còn ít nhất 1 action PENDING -> PENDING
+     * - Nếu toàn bộ action đã CANCELLED -> CANCELLED
+     * - Nếu có ít nhất 1 CONFIRMED và không còn PENDING -> CONFIRMED
+     */
+    val effectiveStatus: CardStatus
+        get() {
+            val actions = allToolActions
+            if (actions.isEmpty()) return cardStatus
+            if (actions.any { it.status == CardStatus.PENDING }) return CardStatus.PENDING
+            if (actions.all { it.status == CardStatus.CANCELLED }) return CardStatus.CANCELLED
+            return CardStatus.CONFIRMED
+        }
+}

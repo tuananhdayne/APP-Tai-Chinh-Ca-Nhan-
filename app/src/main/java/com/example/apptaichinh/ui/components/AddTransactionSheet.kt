@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -48,7 +49,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -67,6 +71,8 @@ fun AddTransactionSheet(
     onSave: (Transaction) -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     // 0 = Nhập thủ công, 1 = Nhập nhanh thông minh (Smart NLP)
     var selectedMode by remember { mutableStateOf(if (editingTransaction != null) 0 else 1) }
@@ -244,6 +250,8 @@ fun AddTransactionSheet(
 
                             Button(
                                 onClick = {
+                                    focusManager.clearFocus()
+                                    keyboardController?.hide()
                                     val newTx = Transaction(
                                         id = 0L,
                                         amount = parsed.amount,
@@ -282,6 +290,8 @@ fun AddTransactionSheet(
                         onClick = {
                             txType = "EXPENSE"
                             selectedCategory = categories.filter { it.type == "EXPENSE" }.firstOrNull()
+                            focusManager.clearFocus()
+                            keyboardController?.hide()
                         },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = if (txType == "EXPENSE") Color(0xFFEF4444) else MaterialTheme.colorScheme.surfaceVariant,
@@ -297,6 +307,8 @@ fun AddTransactionSheet(
                         onClick = {
                             txType = "INCOME"
                             selectedCategory = categories.filter { it.type == "INCOME" }.firstOrNull()
+                            focusManager.clearFocus()
+                            keyboardController?.hide()
                         },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = if (txType == "INCOME") Color(0xFF10B981) else MaterialTheme.colorScheme.surfaceVariant,
@@ -317,7 +329,16 @@ fun AddTransactionSheet(
                     onValueChange = { input -> amountText = input.filter { it.isDigit() } },
                     label = { Text("Số tiền (VNĐ)") },
                     placeholder = { Text("Ví dụ: 50000") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number,
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onDone = {
+                            focusManager.clearFocus()
+                            keyboardController?.hide()
+                        }
+                    ),
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
                     singleLine = true
@@ -354,7 +375,11 @@ fun AddTransactionSheet(
                         val isSelected = selectedCategory?.id == cat.id
                         FilterChip(
                             selected = isSelected,
-                            onClick = { selectedCategory = cat },
+                            onClick = {
+                                selectedCategory = cat
+                                focusManager.clearFocus()
+                                keyboardController?.hide()
+                            },
                             label = { Text("${cat.icon} ${cat.name}") }
                         )
                     }
@@ -362,7 +387,11 @@ fun AddTransactionSheet(
                     // Nút thêm nhanh danh mục mới
                     FilterChip(
                         selected = false,
-                        onClick = { showAddCatDialog = true },
+                        onClick = {
+                            focusManager.clearFocus()
+                            keyboardController?.hide()
+                            showAddCatDialog = true
+                        },
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Default.Add,
@@ -382,6 +411,15 @@ fun AddTransactionSheet(
                     onValueChange = { note = it },
                     label = { Text("Ghi chú (tùy chọn)") },
                     placeholder = { Text("Ví dụ: Ăn trưa cùng bạn, Đổ xăng...") },
+                    keyboardOptions = KeyboardOptions(
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onDone = {
+                            focusManager.clearFocus()
+                            keyboardController?.hide()
+                        }
+                    ),
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
                     singleLine = true
@@ -392,6 +430,8 @@ fun AddTransactionSheet(
                 // Nút Lưu
                 Button(
                     onClick = {
+                        focusManager.clearFocus()
+                        keyboardController?.hide()
                         val amount = amountText.toLongOrNull() ?: 0L
                         val catId = selectedCategory?.id ?: 0L
                         if (amount > 0 && catId > 0) {

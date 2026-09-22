@@ -311,6 +311,69 @@ class LocalToolExecutor(private val dbHelper: FinanceDatabaseHelper) {
         }
 
         /**
+         * Tách một câu chứa nhiều khoản chi tiêu/thu nhập thành tối đa 6 mệnh đề độc lập.
+         * Hỗ trợ đầy đủ:
+         * 1. Phân tách bằng dấu câu: ",", ";", xuống dòng
+         * 2. Phân tách bằng từ nối: "và", "với", "rồi", "kèm theo"
+         * 3. Phân tách khi người dùng viết liền không có dấu phẩy (VD: "nay ăn sáng 200k đổ xăng 100k , đóng tiền điện 1 triệu")
+         */
+        fun splitMultiItemText(text: String): List<String> {
+            val trimmed = text.trim()
+            if (trimmed.isBlank()) return listOf(text)
+
+            // Tách sơ bộ theo dấu phẩy, chấm phẩy, xuống dòng và các liên từ phổ biến
+            val rawParts = trimmed.split(Regex("[,;\n]+|\\s+(?:và|với|rồi|kèm theo)\\s+"))
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+
+            // Regex nhận diện các cụm số tiền tài chính tiếng Việt
+            val amountRegex = Regex(
+                """(?i)(\d+\s*tr\s*\d+|\d+[.,]\d+\s*(?:tr|triệu|trieu|củ|m)(?![a-zA-ZÀ-ỹ0-9])|\d+\s*(?:triệu|trieu|nghìn|nghin|ngàn|ngan|cành|đồng|vnd|củ|lít|lit|tr|k|m|đ)(?![a-zA-ZÀ-ỹ0-9])|\d{1,3}(?:[.,]\d{3})+(?:\s*(?:đ|vnd|đồng))?|\b\d{4,}\b)"""
+            )
+
+            val finalClauses = mutableListOf<String>()
+
+            for (part in rawParts) {
+                val matches = amountRegex.findAll(part).toList()
+                if (matches.size <= 1) {
+                    finalClauses.add(cleanClauseLeadingNoise(part))
+                } else {
+                    // Trong part có nhiều số tiền (VD: "nay ăn sáng 200k đổ xăng 100k")
+                    // Kiểm tra cấu trúc: [Tên khoản] [Số tiền] hay [Số tiền] [Tên khoản]
+                    val isAmountFirst = part.substring(0, matches[0].range.first).trim().isBlank()
+
+                    if (isAmountFirst) {
+                        // Dạng: 200k ăn sáng 100k đổ xăng
+                        for (i in 0 until matches.size - 1) {
+                            val sub = part.substring(matches[i].range.first, matches[i + 1].range.first).trim()
+                            if (sub.isNotBlank()) finalClauses.add(cleanClauseLeadingNoise(sub))
+                        }
+                        val lastSub = part.substring(matches.last().range.first).trim()
+                        if (lastSub.isNotBlank()) finalClauses.add(cleanClauseLeadingNoise(lastSub))
+                    } else {
+                        // Dạng phổ biến: "nay ăn sáng 200k đổ xăng 100k"
+                        var start = 0
+                        for (i in 0 until matches.size - 1) {
+                            val end = matches[i].range.last + 1
+                            val sub = part.substring(start, end).trim()
+                            if (sub.isNotBlank()) finalClauses.add(cleanClauseLeadingNoise(sub))
+                            start = end
+                        }
+                        val lastSub = part.substring(start).trim()
+                        if (lastSub.isNotBlank()) finalClauses.add(cleanClauseLeadingNoise(lastSub))
+                    }
+                }
+            }
+
+            val partsWithAmount = finalClauses.filter { extractAmountFromText(it) != null }
+            return if (partsWithAmount.size > 1) partsWithAmount.take(6) else listOf(text)
+        }
+
+        private fun cleanClauseLeadingNoise(clause: String): String {
+            return clause.replace(Regex("^(?:[,;\\-\\s]|và|với|rồi|kèm theo|sau đó|tiếp|tiếp theo)+\\s*", RegexOption.IGNORE_CASE), "").trim()
+        }
+
+        /**
          * Phân loại nhanh ý định người dùng là Thu nhập (INCOME) hay Chi tiêu (EXPENSE).
          */
         fun isIncomeIntent(text: String): Boolean {

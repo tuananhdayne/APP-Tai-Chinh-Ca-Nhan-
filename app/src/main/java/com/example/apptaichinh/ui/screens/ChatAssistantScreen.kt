@@ -24,6 +24,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.speech.RecognizerIntent
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
@@ -32,6 +39,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Delete
@@ -98,6 +106,64 @@ fun ChatAssistantScreen(
 
     val listState = rememberLazyListState()
     val keyboardController = LocalSoftwareKeyboardController.current
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    // Speech-to-Text launcher sử dụng Android RecognizerIntent có sẵn
+    val speechLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val spokenText = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+            if (!spokenText.isNullOrBlank()) {
+                inputText = spokenText
+            }
+        }
+    }
+
+    // Xin quyền ghi âm nếu hệ thống yêu cầu
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            try {
+                val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, "vi-VN")
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "vi-VN")
+                    putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, "vi-VN")
+                    putExtra(RecognizerIntent.EXTRA_PROMPT, "Nói câu thu chi của bạn (VD: Ăn phở 45k)...")
+                }
+                speechLauncher.launch(intent)
+            } catch (e: ActivityNotFoundException) {
+                Toast.makeText(context, "Thiết bị chưa cài đặt nhận diện giọng nói Google", Toast.LENGTH_LONG).show()
+            }
+        } else {
+            Toast.makeText(context, "Cần cấp quyền ghi âm để sử dụng chức năng giọng nói", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun startVoiceInput() {
+        val permissionCheck = androidx.core.content.ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.RECORD_AUDIO
+        )
+        if (permissionCheck == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            try {
+                val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, "vi-VN")
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "vi-VN")
+                    putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, "vi-VN")
+                    putExtra(RecognizerIntent.EXTRA_PROMPT, "Nói câu thu chi của bạn (VD: Ăn phở 45k)...")
+                }
+                speechLauncher.launch(intent)
+            } catch (e: ActivityNotFoundException) {
+                Toast.makeText(context, "Thiết bị chưa cài đặt nhận diện giọng nói Google", Toast.LENGTH_LONG).show()
+            }
+        } else {
+            audioPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+        }
+    }
 
     // Tự động cuộn xuống tin nhắn mới nhất
     LaunchedEffect(messages.size, isThinking) {
@@ -190,10 +256,11 @@ fun ChatAssistantScreen(
                     ChatMessageItem(
                         message = message,
                         categories = categories,
-                        onConfirm = { viewModel.confirmToolAction(message.id) },
-                        onCancel = { viewModel.cancelToolAction(message.id) },
-                        onEditAction = { updatedAction ->
-                            viewModel.updateToolAction(message.id, updatedAction)
+                        onConfirmAll = { viewModel.confirmToolAction(message.id, null) },
+                        onConfirmAction = { actionIndex -> viewModel.confirmToolAction(message.id, actionIndex) },
+                        onCancelAction = { actionIndex -> viewModel.cancelToolAction(message.id, actionIndex) },
+                        onEditAction = { actionIndex, updatedAction ->
+                            viewModel.updateToolAction(message.id, updatedAction, actionIndex)
                         },
                         onAddNewCategory = { newCat, onCreated ->
                             viewModel.addCategory(newCat, onCreated)
@@ -228,6 +295,20 @@ fun ChatAssistantScreen(
                     shape = RoundedCornerShape(24.dp),
                     maxLines = 3,
                     singleLine = false,
+                    trailingIcon = {
+                        if (inputText.isNotEmpty()) {
+                            IconButton(
+                                onClick = { inputText = "" },
+                                enabled = !isThinking
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Xóa nội dung",
+                                    tint = MaterialTheme.colorScheme.outline
+                                )
+                            }
+                        }
+                    },
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(onSend = {
                         if (inputText.isNotBlank() && !isThinking) {
@@ -248,21 +329,23 @@ fun ChatAssistantScreen(
                             inputText = ""
                             keyboardController?.hide()
                             viewModel.sendAiChatMessage(textToSend)
+                        } else if (inputText.isBlank() && !isThinking) {
+                            startVoiceInput()
                         }
                     },
-                    enabled = inputText.isNotBlank() && !isThinking,
+                    enabled = !isThinking,
                     modifier = Modifier
                         .size(48.dp)
                         .clip(CircleShape)
                         .background(
                             if (inputText.isNotBlank() && !isThinking) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.surfaceVariant
+                            else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
                         )
                 ) {
                     Icon(
-                        imageVector = Icons.AutoMirrored.Filled.Send,
-                        contentDescription = "Gửi",
-                        tint = if (inputText.isNotBlank() && !isThinking) Color.White else MaterialTheme.colorScheme.outline
+                        imageVector = if (inputText.isNotBlank()) Icons.AutoMirrored.Filled.Send else Icons.Default.Mic,
+                        contentDescription = if (inputText.isNotBlank()) "Gửi" else "Nói",
+                        tint = if (inputText.isNotBlank() && !isThinking) Color.White else MaterialTheme.colorScheme.primary
                     )
                 }
             }
@@ -315,9 +398,10 @@ fun ChatAssistantScreen(
 fun ChatMessageItem(
     message: ChatMessage,
     categories: List<Category>,
-    onConfirm: () -> Unit,
-    onCancel: () -> Unit,
-    onEditAction: (ToolAction) -> Unit,
+    onConfirmAll: () -> Unit,
+    onConfirmAction: (Int) -> Unit,
+    onCancelAction: (Int) -> Unit,
+    onEditAction: (Int, ToolAction) -> Unit,
     onAddNewCategory: (Category, (Category) -> Unit) -> Unit
 ) {
     when (message.sender) {
@@ -408,44 +492,100 @@ fun ChatMessageItem(
                         )
                     }
 
-                    // Render Preview Card nếu có Tool Call (Safety-First)
-                    message.toolAction?.let { action ->
+                    // Render Preview Card nếu có Tool Call (Safety-First, hỗ trợ tối đa 6 action)
+                    val actions = message.allToolActions
+                    if (actions.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(8.dp))
-                        when (action.type) {
-                            ToolActionType.CREATE -> {
-                                CreateTransactionCard(
-                                    action = action,
-                                    cardStatus = message.cardStatus,
-                                    categories = categories,
-                                    onConfirm = onConfirm,
-                                    onCancel = onCancel,
-                                    onEditAction = onEditAction,
-                                    onAddNewCategory = onAddNewCategory
-                                )
+
+                        // Lọc các action đang chờ duyệt (PENDING)
+                        val pendingActions = actions.filter { it.status == CardStatus.PENDING }
+
+                        // Nếu có từ 2 action đang chờ duyệt trở lên, hiển thị thanh tổng hợp + nút "Xác Nhận Lưu Tất Cả"
+                        if (pendingActions.size > 1) {
+                            val totalAmount = pendingActions.filter { it.type == ToolActionType.CREATE }.sumOf { it.amount }
+                            Card(
+                                shape = RoundedCornerShape(14.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 6.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "ĐỀ XUẤT ${pendingActions.size} GIAO DỊCH",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        if (totalAmount > 0) {
+                                            Text(
+                                                text = Formatters.formatVnd(totalAmount),
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Button(
+                                        onClick = onConfirmAll,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Icon(imageVector = Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Xác Nhận Lưu Tất Cả (${pendingActions.size} Khoản)", fontWeight = FontWeight.Bold)
+                                    }
+                                }
                             }
-                            ToolActionType.UPDATE -> {
-                                UpdateTransactionCard(
-                                    action = action,
-                                    cardStatus = message.cardStatus,
-                                    onConfirm = onConfirm,
-                                    onCancel = onCancel
-                                )
+                        }
+
+                        actions.forEachIndexed { index, action ->
+                            if (index > 0) {
+                                Spacer(modifier = Modifier.height(8.dp))
                             }
-                            ToolActionType.DELETE -> {
-                                DeleteTransactionCard(
-                                    action = action,
-                                    cardStatus = message.cardStatus,
-                                    onConfirm = onConfirm,
-                                    onCancel = onCancel
-                                )
-                            }
-                            ToolActionType.CREATE_CATEGORY -> {
-                                CreateCategoryCard(
-                                    action = action,
-                                    cardStatus = message.cardStatus,
-                                    onConfirm = onConfirm,
-                                    onCancel = onCancel
-                                )
+                            val currentCardStatus = action.status
+                            when (action.type) {
+                                ToolActionType.CREATE -> {
+                                    CreateTransactionCard(
+                                        action = action,
+                                        cardStatus = currentCardStatus,
+                                        categories = categories,
+                                        onConfirm = { onConfirmAction(index) },
+                                        onCancel = { onCancelAction(index) },
+                                        onEditAction = { updated -> onEditAction(index, updated) },
+                                        onAddNewCategory = onAddNewCategory
+                                    )
+                                }
+                                ToolActionType.UPDATE -> {
+                                    UpdateTransactionCard(
+                                        action = action,
+                                        cardStatus = currentCardStatus,
+                                        onConfirm = { onConfirmAction(index) },
+                                        onCancel = { onCancelAction(index) }
+                                    )
+                                }
+                                ToolActionType.DELETE -> {
+                                    DeleteTransactionCard(
+                                        action = action,
+                                        cardStatus = currentCardStatus,
+                                        onConfirm = { onConfirmAction(index) },
+                                        onCancel = { onCancelAction(index) }
+                                    )
+                                }
+                                ToolActionType.CREATE_CATEGORY -> {
+                                    CreateCategoryCard(
+                                        action = action,
+                                        cardStatus = currentCardStatus,
+                                        onConfirm = { onConfirmAction(index) },
+                                        onCancel = { onCancelAction(index) }
+                                    )
+                                }
                             }
                         }
                     }

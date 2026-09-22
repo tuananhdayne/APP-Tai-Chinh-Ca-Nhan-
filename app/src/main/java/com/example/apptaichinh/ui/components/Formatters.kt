@@ -26,6 +26,16 @@ object Formatters {
         }
     }
 
+    fun formatCompactVnd(amount: Long): String {
+        val abs = Math.abs(amount)
+        return when {
+            abs >= 1_000_000_000 -> String.format(Locale("vi", "VN"), "%.1fB", abs / 1_000_000_000.0).replace(",0", "").replace(".0", "")
+            abs >= 1_000_000 -> String.format(Locale("vi", "VN"), "%.1ftr", abs / 1_000_000.0).replace(",0", "").replace(".0", "")
+            abs >= 1_000 -> "${abs / 1_000}k"
+            else -> "$abs"
+        }
+    }
+
     fun formatDate(dateEpoch: Long): String {
         val nowCal = Calendar.getInstance()
         val txCal = Calendar.getInstance().apply { timeInMillis = dateEpoch }

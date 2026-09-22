@@ -18,7 +18,11 @@ import java.util.concurrent.TimeUnit
 
 sealed class AiResponse {
     data class TextReply(val text: String) : AiResponse()
-    data class ToolCallReply(val toolAction: ToolAction, val assistantExplanation: String) : AiResponse()
+    data class ToolCallReply(
+        val toolAction: ToolAction,
+        val assistantExplanation: String,
+        val toolActions: List<ToolAction> = listOf(toolAction)
+    ) : AiResponse()
     data class Error(val message: String) : AiResponse()
 }
 
@@ -94,15 +98,74 @@ class AiService(private val dbHelper: FinanceDatabaseHelper) {
             }
             messagesArray.put(systemMsg)
 
-            // 2. Nạp ngữ cảnh gần nhất của cuộc trò chuyện
-            val recentHistory = conversationHistory.takeLast(4)
+            // 2. Nạp ngữ cảnh cuộc trò chuyện kèm TRẠNG THÁI DUYỆT THỰC TẾ (CONFIRMED / CANCELLED / PENDING)
+            // Loại bỏ trùng lặp tin nhắn cuối của user (nếu đã nằm trong conversationHistory)
+            val historyWithoutCurrent = if (conversationHistory.isNotEmpty() &&
+                conversationHistory.last().sender == MessageSender.USER &&
+                conversationHistory.last().text == userMessage
+            ) {
+                conversationHistory.dropLast(1)
+            } else {
+                conversationHistory
+            }
+
+            // Tăng lịch sử hội thoại lên 8 tin gần nhất để AI nhớ sâu ngữ cảnh
+            val recentHistory = historyWithoutCurrent.takeLast(8)
             for (msg in recentHistory) {
-                if (msg.sender == MessageSender.SYSTEM) continue
-                val role = if (msg.sender == MessageSender.USER) "user" else "assistant"
-                messagesArray.put(JSONObject().apply {
-                    put("role", role)
-                    put("content", msg.text)
-                })
+                when (msg.sender) {
+                    MessageSender.USER -> {
+                        messagesArray.put(JSONObject().apply {
+                            put("role", "user")
+                            put("content", msg.text)
+                        })
+                    }
+
+                    MessageSender.ASSISTANT -> {
+                        // Bổ sung trạng thái thực tế của thẻ (Đã duyệt / Đã hủy / Đang chờ) vào ngữ cảnh AI
+                        val actions = msg.allToolActions
+                        val statusContext = if (actions.isNotEmpty()) {
+                            val confirmed = actions.filter { it.status == CardStatus.CONFIRMED }
+                            val cancelled = actions.filter { it.status == CardStatus.CANCELLED }
+                            val pending = actions.filter { it.status == CardStatus.PENDING }
+
+                            val sb = StringBuilder("\n[HỆ THỐNG TRẠNG THÁI GIAO DỊCH:")
+                            if (confirmed.isNotEmpty()) {
+                                val list = confirmed.joinToString("; ") { act ->
+                                    val sign = if (act.transactionType == "INCOME") "+" else "-"
+                                    "${act.categoryIcon} ${act.categoryName} (${act.note}): $sign${com.example.apptaichinh.ui.components.Formatters.formatVnd(act.amount)}"
+                                }
+                                sb.append(" ĐÃ LƯU VÀO SỔ: $list.")
+                            }
+                            if (cancelled.isNotEmpty()) {
+                                val list = cancelled.joinToString("; ") { act ->
+                                    "${act.categoryIcon} ${act.categoryName} (${act.note})"
+                                }
+                                sb.append(" ĐÃ HỦY: $list.")
+                            }
+                            if (pending.isNotEmpty()) {
+                                val list = pending.joinToString("; ") { act ->
+                                    "${act.categoryIcon} ${act.categoryName} (${act.note})"
+                                }
+                                sb.append(" ĐANG CHỜ DUYỆT: $list.")
+                            }
+                            sb.append("]")
+                            sb.toString()
+                        } else ""
+
+                        messagesArray.put(JSONObject().apply {
+                            put("role", "assistant")
+                            put("content", msg.text + statusContext)
+                        })
+                    }
+
+                    MessageSender.SYSTEM -> {
+                        // Nạp cả thông báo xác nhận hệ thống vào ngữ cảnh để AI biết giao dịch đã thành công
+                        messagesArray.put(JSONObject().apply {
+                            put("role", "user")
+                            put("content", "[HỆ THỐNG]: ${msg.text}")
+                        })
+                    }
+                }
             }
 
             // 3. Nạp tin nhắn hiện tại của người dùng
@@ -111,9 +174,9 @@ class AiService(private val dbHelper: FinanceDatabaseHelper) {
                 put("content", userMessage)
             })
 
-            var pendingToolAction: ToolAction? = null
+            val pendingToolActions = mutableListOf<ToolAction>()
             var finalExplanation = ""
-            val maxIterations = 4 // Giới hạn tối đa 4 bước suy luận để đảm bảo tốc độ
+            val maxIterations = 6 // Tăng lên tối đa 6 bước suy luận (hỗ trợ tối đa 6 action)
 
             // --- VÒNG LẶP ĐA TÁC TỬ (MULTI-STEP REACT LOOP) ---
             for (iteration in 0 until maxIterations) {
@@ -191,9 +254,11 @@ class AiService(private val dbHelper: FinanceDatabaseHelper) {
                         })
                         hasQueryToolExecuted = true
                     } else {
-                        // B. Action Tool (create / update / delete)
-                        val action = processToolAction(functionName, argsJson, categories, userMessage)
-                        pendingToolAction = action
+                        // B. Action Tool (create / update / delete) - hỗ trợ tối đa 6 action
+                        if (pendingToolActions.size < 6) {
+                            val action = processToolAction(functionName, argsJson, categories, userMessage)
+                            pendingToolActions.add(action)
+                        }
 
                         // Báo cho LLM biết phiếu đã được tạo để LLM sinh câu trả lời hoàn thiện
                         messagesArray.put(JSONObject().apply {
@@ -213,53 +278,75 @@ class AiService(private val dbHelper: FinanceDatabaseHelper) {
             // Chống Hallucination của LLM:
             // Nếu người dùng nhập câu thu/chi rõ ràng (có số tiền phát hiện được) nhưng LLM "chém gió" bằng text
             // (VD: "Đã thêm khoản chi tiêu vào sổ...") mà quên gọi create_transaction:
-            // Hệ thống tự động phục hồi hành động (Auto-Recovery) để luôn có Phiếu Xem Trước cho người dùng bấm Lưu!
-            if (pendingToolAction == null) {
-                val detectedAmount = LocalToolExecutor.extractAmountFromText(userMessage)
+            // Hệ thống tự động phục hồi hành động (Auto-Recovery đa mệnh đề tối đa 6 khoản) để luôn có Phiếu Xem Trước cho người dùng bấm Lưu!
+            if (pendingToolActions.isEmpty()) {
+                val clauses = LocalToolExecutor.splitMultiItemText(userMessage)
                 val lowerMsg = userMessage.lowercase()
                 val isQueryIntent = lowerMsg.contains("hết bao nhiêu") || lowerMsg.contains("bao nhiêu tiền") ||
                         lowerMsg.contains("vượt chưa") || lowerMsg.contains("còn bao nhiêu") ||
                         lowerMsg.contains("xem lại") || lowerMsg.contains("tìm") || lowerMsg.contains("kiểm tra")
 
-                if (detectedAmount != null && detectedAmount > 0 && !isQueryIntent) {
-                    val isIncome = LocalToolExecutor.isIncomeIntent(userMessage)
-                    val type = if (isIncome) "INCOME" else "EXPENSE"
-                    val (matchedCat, _) = LocalToolExecutor.matchBestCategory(userMessage, type, categories)
-                    val cat = matchedCat ?: categories.find { it.type == type } ?: Category(0, "Khác", type, "📦", "#607D8B", 0L)
+                if (!isQueryIntent) {
+                    for (clause in clauses.take(6)) {
+                        val detectedAmount = LocalToolExecutor.extractAmountFromText(clause)
+                        if (detectedAmount != null && detectedAmount > 0) {
+                            val isIncome = LocalToolExecutor.isIncomeIntent(clause)
+                            val type = if (isIncome) "INCOME" else "EXPENSE"
+                            val (matchedCat, _) = LocalToolExecutor.matchBestCategory(clause, type, categories)
+                            val cat = matchedCat ?: categories.find { it.type == type } ?: Category(0, "Khác", type, "📦", "#607D8B", 0L)
 
-                    pendingToolAction = ToolAction(
-                        type = ToolActionType.CREATE,
-                        amount = detectedAmount,
-                        transactionType = type,
-                        categoryId = cat.id,
-                        categoryName = cat.name,
-                        categoryIcon = cat.icon,
-                        categoryColorHex = cat.colorHex,
-                        note = userMessage.take(50)
-                    )
+                            pendingToolActions.add(
+                                ToolAction(
+                                    type = ToolActionType.CREATE,
+                                    amount = detectedAmount,
+                                    transactionType = type,
+                                    categoryId = cat.id,
+                                    categoryName = cat.name,
+                                    categoryIcon = cat.icon,
+                                    categoryColorHex = cat.colorHex,
+                                    note = cleanNote("", clause, cat.name)
+                                )
+                            )
+                        }
+                    }
                 }
             }
 
             // Trả về kết quả sau khi hoàn tất toàn bộ chuỗi suy luận
-            // Khi có pendingToolAction (tạo/sửa giao dịch), luôn dùng câu thông báo chuẩn xác đồng bộ với phiếu xem trước
-            val textOutput = if (pendingToolAction != null) {
-                val action = pendingToolAction
-                when (action.type) {
-                    ToolActionType.CREATE_CATEGORY -> {
-                        val typeName = if (action.transactionType == "INCOME") "Thu nhập" else "Chi tiêu"
-                        "Đã nhận diện đề xuất tạo danh mục $typeName mới:\n• Danh mục: ${action.categoryIcon} ${action.categoryName}${if (action.categoryBudget > 0) "\n• Hạn mức: ${com.example.apptaichinh.ui.components.Formatters.formatVnd(action.categoryBudget)}" else ""}\n\nMình đã soạn sẵn phiếu đề xuất bên dưới, bạn hãy kiểm tra và nhấn 'Xác Nhận Tạo' nhé!"
+            // Khi có pendingToolActions (tạo/sửa giao dịch), luôn dùng câu thông báo chuẩn xác đồng bộ với phiếu xem trước
+            val textOutput = if (pendingToolActions.isNotEmpty()) {
+                if (pendingToolActions.size == 1) {
+                    val action = pendingToolActions.first()
+                    when (action.type) {
+                        ToolActionType.CREATE_CATEGORY -> {
+                            val typeName = if (action.transactionType == "INCOME") "Thu nhập" else "Chi tiêu"
+                            "Đã nhận diện đề xuất tạo danh mục $typeName mới:\n• Danh mục: ${action.categoryIcon} ${action.categoryName}${if (action.categoryBudget > 0) "\n• Hạn mức: ${com.example.apptaichinh.ui.components.Formatters.formatVnd(action.categoryBudget)}" else ""}\n\nMình đã soạn sẵn phiếu đề xuất bên dưới, bạn hãy kiểm tra và nhấn 'Xác Nhận Tạo' nhé!"
+                        }
+                        ToolActionType.UPDATE -> {
+                            "Đã soạn phiếu chỉnh sửa giao dịch. Bạn có thể kiểm tra và nhấn 'Xác Nhận Sửa' bên dưới nhé!"
+                        }
+                        ToolActionType.DELETE -> {
+                            "Đã soạn phiếu xóa giao dịch. Bạn hãy nhấn 'Xác Nhận Xóa' bên dưới nếu muốn xóa bỏ khoản này nhé!"
+                        }
+                        else -> {
+                            val typeName = if (action.transactionType == "INCOME") "Thu nhập" else "Chi tiêu"
+                            val amountStr = com.example.apptaichinh.ui.components.Formatters.formatVnd(action.amount)
+                            "Đã nhận diện khoản $typeName:\n• Danh mục: ${action.categoryIcon} ${action.categoryName}\n• Số tiền: $amountStr${if (action.note.isNotBlank()) "\n• Ghi chú: ${action.note}" else ""}\n\nMình đã soạn sẵn phiếu bên dưới, bạn có thể bấm 'Sửa' (✏️) để chỉnh lại thông tin hoặc nhấn 'Xác Nhận Lưu' nhé!"
+                        }
                     }
-                    ToolActionType.UPDATE -> {
-                        "Đã soạn phiếu chỉnh sửa giao dịch. Bạn có thể kiểm tra và nhấn 'Xác Nhận Sửa' bên dưới nhé!"
+                } else {
+                    val sb = StringBuilder()
+                    val totalAmount = pendingToolActions.filter { it.type == ToolActionType.CREATE }.sumOf { it.amount }
+                    sb.append("Mình đã nhận diện ${pendingToolActions.size} khoản và chuẩn bị sẵn các phiếu bên dưới:\n")
+                    pendingToolActions.forEachIndexed { index, act ->
+                        val sign = if (act.transactionType == "INCOME") "+" else "-"
+                        sb.append("${index + 1}. ${act.categoryIcon} ${act.categoryName} (${act.note}): $sign${com.example.apptaichinh.ui.components.Formatters.formatVnd(act.amount)}\n")
                     }
-                    ToolActionType.DELETE -> {
-                        "Đã soạn phiếu xóa giao dịch. Bạn hãy nhấn 'Xác Nhận Xóa' bên dưới nếu muốn xóa bỏ khoản này nhé!"
+                    if (totalAmount > 0) {
+                        sb.append("\n• Tổng cộng: ${com.example.apptaichinh.ui.components.Formatters.formatVnd(totalAmount)}\n")
                     }
-                    else -> {
-                        val typeName = if (action.transactionType == "INCOME") "Thu nhập" else "Chi tiêu"
-                        val amountStr = com.example.apptaichinh.ui.components.Formatters.formatVnd(action.amount)
-                        "Đã nhận diện khoản $typeName:\n• Danh mục: ${action.categoryIcon} ${action.categoryName}\n• Số tiền: $amountStr${if (action.note.isNotBlank()) "\n• Ghi chú: ${action.note}" else ""}\n\nMình đã soạn sẵn phiếu bên dưới, bạn có thể bấm 'Sửa' (✏️) để chỉnh lại thông tin hoặc nhấn 'Xác Nhận Lưu' nhé!"
-                    }
+                    sb.append("\nBạn có thể kiểm tra từng thẻ hoặc nhấn 'Xác Nhận Lưu Tất Cả' để ghi vào sổ nhé!")
+                    sb.toString()
                 }
             } else if (finalExplanation.isNotBlank()) {
                 var cleanExplanation = finalExplanation
@@ -285,8 +372,12 @@ class AiService(private val dbHelper: FinanceDatabaseHelper) {
                 "Xin chào! Mình đã tiếp nhận thông tin của bạn."
             }
 
-            return@withContext if (pendingToolAction != null) {
-                AiResponse.ToolCallReply(pendingToolAction, textOutput)
+            return@withContext if (pendingToolActions.isNotEmpty()) {
+                AiResponse.ToolCallReply(
+                    toolAction = pendingToolActions.first(),
+                    assistantExplanation = textOutput,
+                    toolActions = pendingToolActions.take(6)
+                )
             } else {
                 AiResponse.TextReply(textOutput)
             }
@@ -305,20 +396,42 @@ class AiService(private val dbHelper: FinanceDatabaseHelper) {
         return when (functionName) {
             "create_transaction" -> {
                 val amountFromArgs = args.optLong("amount", 0L)
-                val detectedAmount = LocalToolExecutor.extractAmountFromText(userMessage)
-                // Khắc phục triệt để lỗi tính nhẩm của LLM nhỏ (như 100k thành 10k):
-                // Nếu người dùng có nêu rõ số tiền trong câu nói thì ưu tiên giá trị trích xuất chuẩn xác tuyệt đối
-                val amount = if (detectedAmount != null && detectedAmount > 0) detectedAmount else amountFromArgs
-                val type = args.optString("type", "EXPENSE")
                 val catName = args.optString("category_name", "")
                 val noteArg = args.optString("note", "").trim()
-                val note = if (noteArg.isNotBlank() && !noteArg.equals("chi tiêu", ignoreCase = true)) noteArg else userMessage.take(50)
+                val type = args.optString("type", "EXPENSE")
+
+                // Xử lý số tiền chuẩn xác trong ngữ cảnh đơn lẻ hoặc đa khoản
+                val clauses = LocalToolExecutor.splitMultiItemText(userMessage)
+                val matchingClause = clauses.find { cl ->
+                    val clAmount = LocalToolExecutor.extractAmountFromText(cl)
+                    (amountFromArgs > 0 && clAmount == amountFromArgs) ||
+                            (catName.isNotBlank() && cl.contains(catName, ignoreCase = true)) ||
+                            (noteArg.isNotBlank() && cl.contains(noteArg, ignoreCase = true))
+                }
+
+                val amount = if (amountFromArgs > 0) {
+                    val detectedInClause = matchingClause?.let { LocalToolExecutor.extractAmountFromText(it) }
+                    detectedInClause ?: amountFromArgs
+                } else {
+                    LocalToolExecutor.extractAmountFromText(noteArg)
+                        ?: matchingClause?.let { LocalToolExecutor.extractAmountFromText(it) }
+                        ?: LocalToolExecutor.extractAmountFromText(userMessage)
+                        ?: 0L
+                }
+
+                // Trích xuất note từ matchingClause nếu noteArg trống hoặc trùng toàn bộ userMessage
+                val sourceForNote = if (noteArg.isNotBlank() && !noteArg.equals(userMessage.trim(), ignoreCase = true)) {
+                    noteArg
+                } else {
+                    matchingClause ?: userMessage
+                }
+                val note = cleanNote(noteArg, sourceForNote, catName)
 
                 // Tìm danh mục khớp nhất trong DB
                 val filteredCats = categories.filter { it.type == type }
                 val matchedCat = filteredCats.find { it.name.equals(catName, ignoreCase = true) }
                     ?: filteredCats.find { it.name.contains(catName, ignoreCase = true) || catName.contains(it.name, ignoreCase = true) }
-                    ?: LocalToolExecutor.matchBestCategory(catName, type, filteredCats).first
+                    ?: LocalToolExecutor.matchBestCategory(catName.ifBlank { note }, type, filteredCats).first
                     ?: filteredCats.firstOrNull()
                     ?: Category(0, catName, type, "📦", "#607D8B", 0L)
 
@@ -339,7 +452,7 @@ class AiService(private val dbHelper: FinanceDatabaseHelper) {
                 val oldAmount = if (args.has("old_amount")) args.optLong("old_amount") else null
                 val newAmount = if (args.has("new_amount")) args.optLong("new_amount") else null
                 val newCatName = if (args.has("new_category_name")) args.optString("new_category_name") else null
-                val newNote = if (args.has("new_note")) args.optString("new_note") else null
+                val newNote = if (args.has("new_note")) cleanNote(args.optString("new_note"), userMessage, "") else null
 
                 val foundList = dbHelper.searchTransactions(searchKeyword, oldAmount)
                 val targetTx = foundList.firstOrNull()
@@ -395,6 +508,62 @@ class AiService(private val dbHelper: FinanceDatabaseHelper) {
                 type = ToolActionType.CREATE,
                 note = args.optString("note", "")
             )
+        }
+    }
+
+    companion object {
+        /**
+         * Rút gọn và làm sạch ghi chú (note) ngắn gọn, súc tích (2-4 từ),
+         * loại bỏ các từ đệm, từ xưng hô, câu dài dòng và số tiền thừa thãi.
+         */
+        fun cleanNote(rawNote: String, userMessage: String, categoryName: String): String {
+            var text = if (rawNote.isNotBlank() &&
+                !rawNote.equals("chi tiêu", ignoreCase = true) &&
+                !rawNote.equals("thu nhập", ignoreCase = true) &&
+                !rawNote.equals(userMessage.trim(), ignoreCase = true)
+            ) {
+                rawNote.trim()
+            } else {
+                userMessage.trim()
+            }
+
+            // 1. Loại bỏ các từ biểu thị số tiền và đơn vị tiền tệ (VD: "hết 45k", "mất 50.000", "2tr", "45k", "1 triệu")
+            // Sắp xếp đơn vị dài trước đơn vị ngắn để không khớp nhầm ("triệu" trước "tr", "nghìn" trước "ng")
+            // Dùng (?![a-zA-ZÀ-ỹ0-9]) để không ăn lẹm vào chữ cái tiếp theo (VD: "1 tr" trong "1 triệu" gây thừa chữ "iệu")
+            val currencyRegex = Regex(
+                """(?i)(hết|mất|tốn|khoảng|tầm|chi|thu)?\s*([0-9]+(?:\s*tr\s*[0-9]+|[.,][0-9]+)?)\s*(triệu|trieu|nghìn|nghin|ngàn|ngan|cành|đồng|vnd|củ|lít|lit|tr|k|m|đ)?(?![a-zA-ZÀ-ỹ0-9])"""
+            )
+            text = text.replace(currencyRegex, " ").trim()
+            text = text.replace(Regex("([0-9]{1,3}(?:[.,][0-9]{3})+|[0-9]+)"), " ").trim()
+
+            // 2. Loại bỏ các cụm từ đệm xưng hô / thời gian mở đầu câu
+            val prefixRegex = Regex("(?i)^(hôm nay mình|hôm nay|bữa nay mình|bữa nay|ngày nay|nay mình|nay|trưa nay mình|trưa nay|sáng nay mình|sáng nay|tối nay mình|tối nay|chiều nay mình|chiều nay|vừa mới|vừa|mới|mình vừa|mình mới|mình|em vừa|em mới|em|anh vừa|anh mới|anh|tôi vừa|tôi mới|tôi|tớ vừa|tớ mới|tớ|đi|hãy ghi|ghi chép|ghi hộ|ghi cho|thêm|tạo khoản|khoản|tiền)\\s+")
+            var prev = ""
+            while (prev != text) {
+                prev = text
+                text = text.replace(prefixRegex, "").trim()
+            }
+
+            // 3. Loại bỏ các từ đệm kết thúc câu
+            val suffixRegex = Regex("(?i)\\s+(xong|rồi|nhé|nhá|ạ|nha|nhen|đấy|hộ mình|giùm mình|giùm em|nha bạn|nha bot|với)$")
+            prev = ""
+            while (prev != text) {
+                prev = text
+                text = text.replace(suffixRegex, "").trim()
+            }
+
+            // 4. Loại bỏ các từ nối và dấu câu ở đầu/cuối
+            text = text.replace(Regex("^(?:và|với|rồi|kèm theo|sau đó|tiếp|tiếp theo)\\s+", RegexOption.IGNORE_CASE), "").trim()
+            text = text.replace(Regex("\\s+"), " ")
+            text = text.replace(Regex("^[\\s,.-]+"), "").replace(Regex("[\\s,.-]+$"), "").trim()
+
+            // 5. Nếu sau khi rút gọn quá ngắn hoặc rỗng, dùng tên danh mục
+            if (text.isBlank() || text.length < 2) {
+                return categoryName.ifBlank { "Chi tiêu" }
+            }
+
+            // 6. Viết hoa chữ cái đầu và giới hạn tối đa 40 ký tự
+            return text.take(40).replaceFirstChar { it.uppercase() }
         }
     }
 }

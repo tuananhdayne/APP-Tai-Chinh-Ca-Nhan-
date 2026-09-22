@@ -48,6 +48,13 @@ import com.example.apptaichinh.ui.screens.ChatAssistantScreen
 import com.example.apptaichinh.ui.screens.HomeScreen
 import com.example.apptaichinh.ui.viewmodel.FinanceViewModel
 
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.Settings
+import com.example.apptaichinh.ui.screens.CalendarScreen
+import com.example.apptaichinh.ui.screens.ManualEntryScreen
+import com.example.apptaichinh.ui.screens.MoreScreen
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainApp(
@@ -68,6 +75,7 @@ fun MainApp(
 
     var showAddCategoryDialog by remember { mutableStateOf(false) }
     var editingCategory by remember { mutableStateOf<Category?>(null) }
+    var showCategorySheet by remember { mutableStateOf(false) }
 
     // Trạng thái mở cửa sổ chat từ bong bóng nổi
     var showAiChatWindow by remember { mutableStateOf(false) }
@@ -80,14 +88,14 @@ fun MainApp(
                 tonalElevation = 8.dp
             ) {
                 NavigationBarItem(
-                    icon = { Icon(Icons.Default.Home, contentDescription = "Trang Chủ") },
-                    label = { Text("Sổ Thu Chi") },
+                    icon = { Icon(Icons.Default.EditNote, contentDescription = "Nhập vào") },
+                    label = { Text("Nhập vào") },
                     selected = currentTab == 0,
                     onClick = { viewModel.setCurrentTab(0) }
                 )
                 NavigationBarItem(
-                    icon = { Icon(Icons.Default.Savings, contentDescription = "Ngân Sách") },
-                    label = { Text("Ngân Sách") },
+                    icon = { Icon(Icons.Default.CalendarMonth, contentDescription = "Lịch") },
+                    label = { Text("Lịch") },
                     selected = currentTab == 1,
                     onClick = { viewModel.setCurrentTab(1) }
                 )
@@ -98,24 +106,32 @@ fun MainApp(
                     onClick = { viewModel.setCurrentTab(2) }
                 )
                 NavigationBarItem(
-                    icon = { Icon(Icons.Default.Category, contentDescription = "Danh Mục") },
-                    label = { Text("Danh Mục") },
+                    icon = { Icon(Icons.Default.Savings, contentDescription = "Ngân Sách") },
+                    label = { Text("Ngân Sách") },
                     selected = currentTab == 3,
                     onClick = { viewModel.setCurrentTab(3) }
+                )
+                NavigationBarItem(
+                    icon = { Icon(Icons.Default.Settings, contentDescription = "Cài Đặt") },
+                    label = { Text("Cài Đặt") },
+                    selected = currentTab == 4,
+                    onClick = { viewModel.setCurrentTab(4) }
                 )
             }
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = {
-                    editingTx = null
-                    showAddTxSheet = true
-                },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = Color.White,
-                shape = CircleShape
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Thêm Giao Dịch")
+            if (currentTab != 0) {
+                FloatingActionButton(
+                    onClick = {
+                        editingTx = null
+                        showAddTxSheet = true
+                    },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = Color.White,
+                    shape = CircleShape
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Thêm Giao Dịch")
+                }
             }
         }
     ) { innerPadding ->
@@ -125,21 +141,16 @@ fun MainApp(
                 .padding(innerPadding)
         ) {
             when (currentTab) {
-                0 -> HomeScreen(
+                0 -> ManualEntryScreen(
+                    viewModel = viewModel,
+                    onNavigateToCalendar = { viewModel.setCurrentTab(1) }
+                )
+
+                1 -> CalendarScreen(
                     viewModel = viewModel,
                     onEditTransaction = { tx ->
                         editingTx = tx
                         showAddTxSheet = true
-                    },
-                    onOpenBudgetEdit = { showOverallBudgetDialog = true },
-                    onOpenChat = { showAiChatWindow = true }
-                )
-
-                1 -> BudgetScreen(
-                    viewModel = viewModel,
-                    onEditOverallBudget = { showOverallBudgetDialog = true },
-                    onEditCategoryBudget = { catBudget ->
-                        editingCategoryBudget = catBudget
                     }
                 )
 
@@ -147,16 +158,18 @@ fun MainApp(
                     viewModel = viewModel
                 )
 
-                3 -> CategoryScreen(
+                3 -> BudgetScreen(
                     viewModel = viewModel,
-                    onAddCategory = {
-                        editingCategory = null
-                        showAddCategoryDialog = true
-                    },
-                    onEditCategory = { cat ->
-                        editingCategory = cat
-                        showAddCategoryDialog = true
+                    onEditOverallBudget = { showOverallBudgetDialog = true },
+                    onEditCategoryBudget = { catBudget ->
+                        editingCategoryBudget = catBudget
                     }
+                )
+
+                4 -> MoreScreen(
+                    viewModel = viewModel,
+                    onOpenCategories = { showCategorySheet = true },
+                    onOpenAiChat = { showAiChatWindow = true }
                 )
             }
 
@@ -190,6 +203,35 @@ fun MainApp(
                 ChatAssistantScreen(
                     viewModel = viewModel,
                     onClose = { showAiChatWindow = false }
+                )
+            }
+        }
+    }
+
+    // Cửa sổ Quản Lý Danh Mục mở từ Tab Cài Đặt
+    if (showCategorySheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showCategorySheet = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+            containerColor = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.92f)
+            ) {
+                CategoryScreen(
+                    viewModel = viewModel,
+                    onAddCategory = {
+                        editingCategory = null
+                        showAddCategoryDialog = true
+                    },
+                    onEditCategory = { cat ->
+                        editingCategory = cat
+                        showAddCategoryDialog = true
+                    }
                 )
             }
         }

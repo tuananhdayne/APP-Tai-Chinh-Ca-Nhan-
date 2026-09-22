@@ -116,26 +116,33 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 }
 
                 is AiResponse.ToolCallReply -> {
-                    val action = response.toolAction
-                    if ((action.type == ToolActionType.UPDATE || action.type == ToolActionType.DELETE) && action.targetTransaction == null) {
+                    val actions = if (response.toolActions.isNotEmpty()) response.toolActions else listOfNotNull(response.toolAction)
+                    val firstAction = actions.firstOrNull() ?: response.toolAction
+
+                    if ((firstAction.type == ToolActionType.UPDATE || firstAction.type == ToolActionType.DELETE) && firstAction.targetTransaction == null) {
                         // Không tìm thấy giao dịch khớp trong database
                         val notFoundMsg = ChatMessage(
                             sender = MessageSender.ASSISTANT,
-                            text = "⚠️ Không tìm thấy giao dịch nào khớp với từ khóa \"${action.searchKeyword}\" trong sổ để thực hiện ${if (action.type == ToolActionType.UPDATE) "chỉnh sửa" else "xóa"}."
+                            text = "⚠️ Không tìm thấy giao dịch nào khớp với từ khóa \"${firstAction.searchKeyword}\" trong sổ để thực hiện ${if (firstAction.type == ToolActionType.UPDATE) "chỉnh sửa" else "xóa"}."
                         )
                         _chatMessages.value = _chatMessages.value + notFoundMsg
                     } else {
                         val botMsg = ChatMessage(
                             sender = MessageSender.ASSISTANT,
                             text = response.assistantExplanation.ifBlank {
-                                when (action.type) {
-                                    ToolActionType.CREATE -> "Mình đã chuẩn bị thẻ giao dịch mới. Bạn hãy kiểm tra và xác nhận lưu nhé!"
-                                    ToolActionType.UPDATE -> "Mình tìm thấy giao dịch cần sửa. Bạn hãy kiểm tra thông tin thay đổi bên dưới:"
-                                    ToolActionType.DELETE -> "Cảnh báo: Bạn có chắc chắn muốn xóa giao dịch sau không?"
-                                    ToolActionType.CREATE_CATEGORY -> "Mình đã chuẩn bị đề xuất tạo danh mục mới. Bạn hãy kiểm tra và xác nhận nhé!"
+                                if (actions.size > 1) {
+                                    "Mình đã soạn ${actions.size} phiếu giao dịch bên dưới. Bạn hãy kiểm tra và nhấn 'Xác Nhận Lưu Tất Cả' nhé!"
+                                } else {
+                                    when (firstAction.type) {
+                                        ToolActionType.CREATE -> "Mình đã chuẩn bị thẻ giao dịch mới. Bạn hãy kiểm tra và xác nhận lưu nhé!"
+                                        ToolActionType.UPDATE -> "Mình tìm thấy giao dịch cần sửa. Bạn hãy kiểm tra thông tin thay đổi bên dưới:"
+                                        ToolActionType.DELETE -> "Cảnh báo: Bạn có chắc chắn muốn xóa giao dịch sau không?"
+                                        ToolActionType.CREATE_CATEGORY -> "Mình đã chuẩn bị đề xuất tạo danh mục mới. Bạn hãy kiểm tra và xác nhận nhé!"
+                                    }
                                 }
                             },
-                            toolAction = action,
+                            toolAction = firstAction,
+                            toolActions = actions.take(6),
                             cardStatus = CardStatus.PENDING
                         )
                         _chatMessages.value = _chatMessages.value + botMsg
@@ -154,92 +161,160 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    // Xác nhận thực thi Tool Action trên Database (Safety-First)
-    fun confirmToolAction(messageId: String) {
+    // Xác nhận thực thi Tool Action trên Database (Safety-First, hỗ trợ tối đa 6 action)
+    fun confirmToolAction(messageId: String, actionIndex: Int? = null) {
         val targetMsg = _chatMessages.value.find { it.id == messageId } ?: return
-        val action = targetMsg.toolAction ?: return
+        val allActions = targetMsg.allToolActions
+        if (allActions.isEmpty()) return
 
-        // 1. Đổi trạng thái card sang CONFIRMED
+        // Chỉ thực thi những action đang ở trạng thái PENDING
+        val actionsToExecute = if (actionIndex != null && actionIndex in allActions.indices) {
+            val act = allActions[actionIndex]
+            if (act.status != CardStatus.PENDING) return
+            listOf(act)
+        } else {
+            allActions.filter { it.status == CardStatus.PENDING }
+        }
+        if (actionsToExecute.isEmpty()) return
+
+        // 1. Cập nhật trạng thái từng thẻ sang CONFIRMED
         _chatMessages.value = _chatMessages.value.map { msg ->
-            if (msg.id == messageId) msg.copy(cardStatus = CardStatus.CONFIRMED) else msg
+            if (msg.id == messageId) {
+                val updatedList = msg.allToolActions.toMutableList()
+                if (actionIndex != null && actionIndex in updatedList.indices) {
+                    updatedList[actionIndex] = updatedList[actionIndex].copy(status = CardStatus.CONFIRMED)
+                } else {
+                    for (i in updatedList.indices) {
+                        if (updatedList[i].status == CardStatus.PENDING) {
+                            updatedList[i] = updatedList[i].copy(status = CardStatus.CONFIRMED)
+                        }
+                    }
+                }
+                val hasPending = updatedList.any { it.status == CardStatus.PENDING }
+                msg.copy(
+                    toolAction = updatedList.firstOrNull(),
+                    toolActions = updatedList,
+                    cardStatus = if (hasPending) CardStatus.PENDING else CardStatus.CONFIRMED
+                )
+            } else msg
         }
 
         // 2. Thực thi thay đổi trên DB
         viewModelScope.launch {
-            when (action.type) {
-                ToolActionType.CREATE -> {
-                    val newTx = Transaction(
-                        id = 0L,
-                        amount = action.amount,
-                        type = action.transactionType,
-                        categoryId = action.categoryId,
-                        note = action.note,
-                        dateEpoch = System.currentTimeMillis()
-                    )
-                    repository.addTransaction(newTx)
-                    val confirmNotice = ChatMessage(
-                        sender = MessageSender.SYSTEM,
-                        text = "✓ Đã ghi vào sổ: ${action.categoryIcon} ${action.categoryName} (${action.note}) - ${com.example.apptaichinh.ui.components.Formatters.formatVnd(action.amount)}"
-                    )
-                    _chatMessages.value = _chatMessages.value + confirmNotice
-                }
+            val confirmedSummaries = mutableListOf<String>()
+            var totalConfirmedAmount = 0L
 
-                ToolActionType.UPDATE -> {
-                    val oldTx = action.targetTransaction ?: return@launch
-                    val updatedTx = oldTx.copy(
-                        amount = action.newAmount ?: oldTx.amount,
-                        categoryId = action.newCategory?.id ?: oldTx.categoryId,
-                        note = action.newNote ?: oldTx.note
-                    )
-                    repository.updateTransaction(updatedTx)
-                    val confirmNotice = ChatMessage(
-                        sender = MessageSender.SYSTEM,
-                        text = "✓ Đã cập nhật thành công giao dịch!"
-                    )
-                    _chatMessages.value = _chatMessages.value + confirmNotice
-                }
+            for (action in actionsToExecute) {
+                when (action.type) {
+                    ToolActionType.CREATE -> {
+                        val newTx = Transaction(
+                            id = 0L,
+                            amount = action.amount,
+                            type = action.transactionType,
+                            categoryId = action.categoryId,
+                            note = action.note,
+                            dateEpoch = System.currentTimeMillis()
+                        )
+                        repository.addTransaction(newTx)
+                        val sign = if (action.transactionType == "INCOME") "+" else "-"
+                        confirmedSummaries.add("${action.categoryIcon} ${action.categoryName} (${action.note}): $sign${com.example.apptaichinh.ui.components.Formatters.formatVnd(action.amount)}")
+                        totalConfirmedAmount += action.amount
+                    }
 
-                ToolActionType.DELETE -> {
-                    val targetTx = action.targetTransaction ?: return@launch
-                    repository.deleteTransaction(targetTx.id)
-                    val confirmNotice = ChatMessage(
-                        sender = MessageSender.SYSTEM,
-                        text = "✓ Đã xóa giao dịch (${targetTx.categoryIcon} ${targetTx.note}) khỏi sổ!"
-                    )
-                    _chatMessages.value = _chatMessages.value + confirmNotice
-                }
+                    ToolActionType.UPDATE -> {
+                        val oldTx = action.targetTransaction ?: continue
+                        val updatedTx = oldTx.copy(
+                            amount = action.newAmount ?: oldTx.amount,
+                            categoryId = action.newCategory?.id ?: oldTx.categoryId,
+                            note = action.newNote ?: oldTx.note
+                        )
+                        repository.updateTransaction(updatedTx)
+                        confirmedSummaries.add("Sửa: ${action.categoryIcon} ${action.note}")
+                    }
 
-                ToolActionType.CREATE_CATEGORY -> {
-                    val newCat = Category(
-                        id = 0L,
-                        name = action.categoryName,
-                        type = action.transactionType,
-                        icon = action.categoryIcon,
-                        colorHex = action.categoryColorHex,
-                        budget = action.categoryBudget
-                    )
-                    val id = repository.addCategory(newCat)
-                    val confirmNotice = ChatMessage(
-                        sender = MessageSender.SYSTEM,
-                        text = "✓ Đã tạo thành công danh mục mới: ${action.categoryIcon} ${action.categoryName}!"
-                    )
-                    _chatMessages.value = _chatMessages.value + confirmNotice
+                    ToolActionType.DELETE -> {
+                        val targetTx = action.targetTransaction ?: continue
+                        repository.deleteTransaction(targetTx.id)
+                        confirmedSummaries.add("Xóa: ${targetTx.categoryIcon} ${targetTx.note}")
+                    }
+
+                    ToolActionType.CREATE_CATEGORY -> {
+                        val newCat = Category(
+                            id = 0L,
+                            name = action.categoryName,
+                            type = action.transactionType,
+                            icon = action.categoryIcon,
+                            colorHex = action.categoryColorHex,
+                            budget = action.categoryBudget
+                        )
+                        repository.addCategory(newCat)
+                        confirmedSummaries.add("Tạo danh mục: ${action.categoryIcon} ${action.categoryName}")
+                    }
                 }
             }
+
+            val confirmNoticeText = if (actionsToExecute.size > 1) {
+                val sb = StringBuilder("✓ Đã ghi vào sổ ${actionsToExecute.size} khoản thành công:\n")
+                confirmedSummaries.forEach { sb.append("• $it\n") }
+                sb.append("→ Tổng cộng: ${com.example.apptaichinh.ui.components.Formatters.formatVnd(totalConfirmedAmount)}")
+                sb.toString()
+            } else if (confirmedSummaries.isNotEmpty()) {
+                "✓ Đã ghi vào sổ: ${confirmedSummaries.first()}"
+            } else {
+                "✓ Đã thực hiện thao tác thành công!"
+            }
+
+            val confirmNotice = ChatMessage(
+                sender = MessageSender.SYSTEM,
+                text = confirmNoticeText
+            )
+            _chatMessages.value = _chatMessages.value + confirmNotice
         }
     }
 
-    // Cập nhật thông tin Tool Action khi người dùng chỉnh sửa trên thẻ Preview Card
-    fun updateToolAction(messageId: String, updatedAction: ToolAction) {
+    // Cập nhật thông tin Tool Action khi người dùng chỉnh sửa trên thẻ Preview Card (hỗ trợ vị trí thẻ index)
+    fun updateToolAction(messageId: String, updatedAction: ToolAction, actionIndex: Int = 0) {
         _chatMessages.value = _chatMessages.value.map { msg ->
-            if (msg.id == messageId) msg.copy(toolAction = updatedAction) else msg
+            if (msg.id == messageId) {
+                val currentList = msg.allToolActions.toMutableList()
+                if (actionIndex in currentList.indices) {
+                    currentList[actionIndex] = updatedAction
+                } else {
+                    currentList.add(updatedAction)
+                }
+                msg.copy(
+                    toolAction = currentList.firstOrNull(),
+                    toolActions = currentList
+                )
+            } else msg
         }
     }
 
     // Hủy bỏ Tool Action (Safety-First: Không có gì thay đổi trong DB)
-    fun cancelToolAction(messageId: String) {
+    // Hỗ trợ hủy riêng lẻ từng thẻ theo actionIndex hoặc hủy toàn bộ nếu actionIndex = null
+    fun cancelToolAction(messageId: String, actionIndex: Int? = null) {
         _chatMessages.value = _chatMessages.value.map { msg ->
-            if (msg.id == messageId) msg.copy(cardStatus = CardStatus.CANCELLED) else msg
+            if (msg.id == messageId) {
+                val currentList = msg.allToolActions.toMutableList()
+                if (actionIndex != null && actionIndex in currentList.indices) {
+                    currentList[actionIndex] = currentList[actionIndex].copy(status = CardStatus.CANCELLED)
+                    val allCancelled = currentList.all { it.status == CardStatus.CANCELLED }
+                    val hasPending = currentList.any { it.status == CardStatus.PENDING }
+                    val newCardStatus = if (allCancelled) CardStatus.CANCELLED else if (hasPending) CardStatus.PENDING else CardStatus.CONFIRMED
+                    msg.copy(
+                        toolAction = currentList.firstOrNull(),
+                        toolActions = currentList,
+                        cardStatus = newCardStatus
+                    )
+                } else {
+                    val updatedList = currentList.map { it.copy(status = CardStatus.CANCELLED) }
+                    msg.copy(
+                        toolAction = updatedList.firstOrNull(),
+                        toolActions = updatedList,
+                        cardStatus = CardStatus.CANCELLED
+                    )
+                }
+            } else msg
         }
     }
 

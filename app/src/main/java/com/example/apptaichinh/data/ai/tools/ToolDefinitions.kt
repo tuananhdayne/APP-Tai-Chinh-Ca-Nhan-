@@ -110,7 +110,7 @@ object ToolDefinitions {
                 })
                 put("note", JSONObject().apply {
                     put("type", "string")
-                    put("description", "Ghi chú tóm tắt nội dung giao dịch (VD: Ăn phở bò, Đổ xăng xe)")
+                    put("description", "Ghi chú tóm tắt nội dung ngắn gọn 2-4 từ (VD: Ăn phở bò, Đổ xăng xe). CẤM sao chép nguyên cả câu nói dài của người dùng.")
                 })
             },
             required = listOf("amount", "type", "category_name", "note")
