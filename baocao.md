@@ -2,7 +2,7 @@
 **Dự Án:** Ứng Dụng Quản Lý Tài Chính Cá Nhân Android (Native Kotlin + Jetpack Compose + SQLite)  
 **Mô Hình AI:** Qwen2.5-3B-Instruct (Tool Calling / Function Calling qua LM Studio)  
 **Ngày cập nhật:** 22/09/2026  
-**Trạng thái kiểm thử:** 50 / 50 Test Cases PASS 100% (Thời gian chạy ~1.0s, không cần build APK)
+**Trạng thái kiểm thử:** 52 / 52 Test Cases PASS 100% (Thời gian chạy ~1.0s, không cần build APK)
 
 ---
 
@@ -81,6 +81,7 @@ Hệ thống cung cấp đúng **8 công cụ nghiệp vụ** theo chuẩn OpenA
 | **2. AI "chém gió" nói suông không lưu sổ** | Người dùng nói *"đóng tiền nhà 1000k"*, AI trả lời: *"Đã thêm vào sổ..."* nhưng không hiện thẻ Preview Card, sổ không có gì. | LLM bị hallucination, sinh câu trả lời bằng văn bản mà quên phát sinh lệnh gọi `create_transaction`. | Thiết lập chốt chặn **Auto-Recovery Guardrail**: Nếu tin nhắn AI trả về mà `pendingToolAction == null` nhưng câu người dùng có chứa số tiền hợp lệ (> 0), hệ thống tự động xác định Thu/Chi, đối chiếu danh mục và tự động dựng thẻ xem trước để người dùng bấm Lưu ngay. |
 | **3. "Khám bệnh" bị đề xuất tạo danh mục mới** | Người dùng nói *"khám bệnh 1000k"*, AI lại đề xuất tạo danh mục mới dù đã có danh mục Sức khỏe. | System Prompt chưa từng đưa danh sách danh mục có sẵn của người dùng vào ngữ cảnh suy luận của AI. | Nạp trực tiếp danh sách danh mục của người dùng vào System Prompt; thiết lập quy tắc bắt buộc: *"khám bệnh", "mua thuốc", "đi viện", "khám răng", "nha khoa"* **phải khớp vào `🩺 Sức khỏe`**, nghiêm cấm đề xuất tạo danh mục mới khi đã có sẵn. |
 | **4. Khoản chi quá khác biệt** | Các khoản chi hoàn toàn mới lạ như *"nuôi mèo"*, *"thú cưng"*. | Trước đây chưa có cơ chế tạo danh mục qua AI. | Bổ sung tool `create_category` và thẻ `CreateCategoryCard`: Chỉ khi khoản chi/thu hoàn toàn mới lạ và không thể xếp vào danh mục nào có sẵn, AI mới đề xuất tạo danh mục mới. |
+| **5. Báo cáo nhầm "còn thiếu" thay vì "đang vượt ngân sách"** | Tiêu hết 20.310.000 đ (vượt ngân sách 18.310.000 đ) nhưng AI lại nói *"và còn thiếu 1.831.000đ"*. | 1) JSON công cụ trước đây trả về số âm `remaining_budget_vnd: -18310000`, khiến mô hình dịch chữ "remaining" thành "còn thiếu". 2) Mô hình 3B tự chia tách số nguyên thô dẫn đến rớt số 0 thành `1.831.000đ`. | 1) Chuẩn hóa JSON: Khi vượt ngân sách thì `remaining_budget_vnd = 0`, cấp sẵn các trường định dạng chuẩn mực `over_budget_amount_formatted: "18.310.000 đ"`, `budget_status: "ĐÃ VƯỢT NGÂN SÁCH"`, `budget_verdict`. 2) System Prompt nghiêm cấm dùng từ "còn thiếu" khi chi tiêu lố. 3) Bổ sung Guardrail khử ảo giác tự động làm sạch câu văn. |
 
 ---
 

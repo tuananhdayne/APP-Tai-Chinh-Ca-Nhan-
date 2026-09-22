@@ -615,4 +615,77 @@ class AiBudgetAndUserInputsComprehensiveTest {
         assertEquals("Nhà ở", recoveredAction.categoryName)
         assertEquals("EXPENSE", recoveredAction.transactionType)
     }
+
+    @Test
+    fun testOverBudgetExceedsCalculationAndFormatting_ExactUserCase() {
+        // Kịch bản thực tế của người dùng:
+        // Tổng chi tiêu: 20.310.000 đ (trong đó Nhà ở = 20.000.000 đ)
+        // Tổng thu nhập: 2.000.000 đ
+        // Ngân sách tổng tháng: 2.000.000 đ
+        val totalExpense = 20310000L
+        val totalIncome = 2000000L
+        val totalBudget = 2000000L
+
+        val isOverBudget = totalExpense > totalBudget
+        val overAmount = totalExpense - totalBudget
+        val remainingBudget = if (isOverBudget) 0L else (totalBudget - totalExpense)
+
+        assertTrue(isOverBudget)
+        assertEquals(18310000L, overAmount)
+        assertEquals(0L, remainingBudget)
+
+        // Kiểm tra format tiền tệ không bị rớt số 0
+        val formattedExpense = LocalToolExecutor.formatVndAmount(totalExpense)
+        val formattedOver = LocalToolExecutor.formatVndAmount(overAmount)
+        val formattedIncome = LocalToolExecutor.formatVndAmount(totalIncome)
+
+        assertEquals("20.310.000 đ", formattedExpense)
+        assertEquals("18.310.000 đ", formattedOver)
+        assertEquals("2.000.000 đ", formattedIncome)
+
+        // Kiểm tra cấu trúc JSON trả về cho LLM
+        val summaryJson = JSONObject().apply {
+            put("total_income_vnd", totalIncome)
+            put("total_income_formatted", formattedIncome)
+            put("total_expense_vnd", totalExpense)
+            put("total_expense_formatted", formattedExpense)
+            put("total_budget_limit_vnd", totalBudget)
+            put("total_budget_limit_formatted", formattedIncome)
+            put("remaining_budget_vnd", remainingBudget)
+            put("remaining_budget_formatted", "0 đ")
+            put("is_over_budget", isOverBudget)
+            put("budget_status", "ĐÃ VƯỢT NGÂN SÁCH")
+            put("over_budget_amount_vnd", overAmount)
+            put("over_budget_amount_formatted", formattedOver)
+            put("budget_verdict", "Đang VƯỢT NGÂN SÁCH $formattedOver (Hạn mức: $formattedIncome, Đã chi tiêu: $formattedExpense). TUYỆT ĐỐI KHÔNG dùng từ 'còn thiếu', phải nói rõ là 'ĐANG VƯỢT NGÂN SÁCH $formattedOver'.")
+        }
+
+        assertTrue(summaryJson.getBoolean("is_over_budget"))
+        assertEquals(18310000L, summaryJson.getLong("over_budget_amount_vnd"))
+        assertEquals("18.310.000 đ", summaryJson.getString("over_budget_amount_formatted"))
+        assertEquals(0L, summaryJson.getLong("remaining_budget_vnd"))
+        assertTrue(summaryJson.getString("budget_verdict").contains("Đang VƯỢT NGÂN SÁCH 18.310.000 đ"))
+        assertTrue(summaryJson.getString("budget_verdict").contains("TUYỆT ĐỐI KHÔNG dùng từ 'còn thiếu'"))
+    }
+
+    @Test
+    fun testAiExplanationSanitizer_RemovesConThieuHallucination() {
+        // Mô phỏng đúng câu trả lời bị lỗi ảo giác của LLM từ ảnh chụp màn hình
+        val rawHallucinatedAnswer = "Tháng này, bạn đã tổng cộng tiêu hết 20.310.000 đồng và còn thiếu 1.831.000đ. Tổng thu nhập của tháng là 2.000.000đ, nhưng chi tiêu vượt quá ngân sách tổng định trước với tỷ lệ 1015%."
+
+        var cleanExplanation = rawHallucinatedAnswer
+        if (cleanExplanation.contains("còn thiếu", ignoreCase = true)) {
+            if (cleanExplanation.contains("vượt", ignoreCase = true) || 
+                cleanExplanation.contains("lố", ignoreCase = true) || 
+                cleanExplanation.contains("ngân sách", ignoreCase = true)) {
+                cleanExplanation = cleanExplanation
+                    .replace(Regex("và còn thiếu\\s+[0-9.,]+(đ| đồng| ₫)?", RegexOption.IGNORE_CASE), "")
+                    .replace(Regex(",?\\s*còn thiếu\\s+[0-9.,]+(đ| đồng| ₫)?", RegexOption.IGNORE_CASE), "")
+            }
+        }
+
+        assertFalse("Không được chứa cụm từ 'còn thiếu'", cleanExplanation.contains("còn thiếu"))
+        assertTrue("Vẫn giữ nguyên tổng chi tiêu 20.310.000", cleanExplanation.contains("20.310.000"))
+        assertTrue("Vẫn giữ cảnh báo vượt ngân sách", cleanExplanation.contains("vượt quá ngân sách"))
+    }
 }

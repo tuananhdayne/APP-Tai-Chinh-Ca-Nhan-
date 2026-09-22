@@ -38,21 +38,49 @@ class LocalToolExecutor(private val dbHelper: FinanceDatabaseHelper) {
                 val catBudgets = dbHelper.getCategoryBudgets(y, m)
                 val overBudgetCategories = catBudgets.filter { it.isOverBudget }
 
+                val isOver = overallBudget.isOverBudget
+                val overAmount = if (isOver) (overallBudget.totalExpense - overallBudget.totalBudget) else 0L
+                val netBalance = summary.balance
+                val isDeficit = netBalance < 0
+                val deficitAmount = if (isDeficit) Math.abs(netBalance) else 0L
+
                 JSONObject().apply {
                     put("year", y)
                     put("month", m + 1)
                     put("total_income_vnd", summary.totalIncome)
+                    put("total_income_formatted", formatVndAmount(summary.totalIncome))
                     put("total_expense_vnd", summary.totalExpense)
+                    put("total_expense_formatted", formatVndAmount(summary.totalExpense))
                     put("net_balance_vnd", summary.balance)
+                    if (isDeficit) {
+                        put("net_balance_status", "THÂM HỤT (Chi nhiều hơn Thu)")
+                        put("net_deficit_formatted", formatVndAmount(deficitAmount))
+                    } else {
+                        put("net_balance_status", "DƯ (Thu nhiều hơn Chi)")
+                        put("net_surplus_formatted", formatVndAmount(netBalance))
+                    }
                     put("total_budget_limit_vnd", overallBudget.totalBudget)
-                    put("remaining_budget_vnd", overallBudget.remaining)
+                    put("total_budget_limit_formatted", formatVndAmount(overallBudget.totalBudget))
+                    put("remaining_budget_vnd", if (isOver) 0L else overallBudget.remaining)
+                    put("remaining_budget_formatted", if (isOver) "0 đ" else formatVndAmount(overallBudget.remaining))
                     put("percentage_spent", "${(overallBudget.percentage * 100).toInt()}%")
-                    put("is_over_budget", overallBudget.isOverBudget)
+                    put("is_over_budget", isOver)
+                    put("budget_status", if (isOver) "ĐÃ VƯỢT NGÂN SÁCH" else "TRONG HẠN MỨC")
+                    if (isOver) {
+                        put("over_budget_amount_vnd", overAmount)
+                        put("over_budget_amount_formatted", formatVndAmount(overAmount))
+                        put("budget_verdict", "Đang VƯỢT NGÂN SÁCH ${formatVndAmount(overAmount)} (Hạn mức: ${formatVndAmount(overallBudget.totalBudget)}, Đã chi tiêu: ${formatVndAmount(overallBudget.totalExpense)}). TUYỆT ĐỐI KHÔNG dùng từ 'còn thiếu', phải nói rõ là 'ĐANG VƯỢT NGÂN SÁCH ${formatVndAmount(overAmount)}'.")
+                    } else {
+                        put("over_budget_amount_vnd", 0L)
+                        put("over_budget_amount_formatted", "0 đ")
+                        put("budget_verdict", "Còn lại ${formatVndAmount(overallBudget.remaining)} trong hạn mức ngân sách tháng.")
+                    }
                     put("over_budget_category_count", overBudgetCategories.size)
                     if (overBudgetCategories.isNotEmpty()) {
                         val overList = JSONArray()
                         overBudgetCategories.forEach {
-                            overList.put("${it.category.icon} ${it.category.name}: đã tiêu ${it.spentAmount}/${it.budgetAmount} đ (vượt ${it.spentAmount - it.budgetAmount} đ)")
+                            val catOver = it.spentAmount - it.budgetAmount
+                            overList.put("${it.category.icon} ${it.category.name}: Hạn mức ${formatVndAmount(it.budgetAmount)}, đã tiêu ${formatVndAmount(it.spentAmount)} -> VƯỢT HẠN MỨC ${formatVndAmount(catOver)}")
                         }
                         put("over_budget_categories", overList)
                     }
@@ -87,13 +115,29 @@ class LocalToolExecutor(private val dbHelper: FinanceDatabaseHelper) {
 
                 val resultList = JSONArray()
                 targetBudgets.forEach { cb ->
+                    val isCatOver = cb.isOverBudget
+                    val catOverAmount = if (isCatOver) (cb.spentAmount - cb.budgetAmount) else 0L
                     resultList.put(JSONObject().apply {
                         put("category", "${cb.category.icon} ${cb.category.name}")
                         put("budget_limit_vnd", cb.budgetAmount)
+                        put("budget_limit_formatted", formatVndAmount(cb.budgetAmount))
                         put("spent_vnd", cb.spentAmount)
-                        put("remaining_vnd", cb.remaining)
+                        put("spent_formatted", formatVndAmount(cb.spentAmount))
+                        put("remaining_vnd", if (isCatOver) 0L else cb.remaining)
+                        put("remaining_formatted", if (isCatOver) "0 đ" else formatVndAmount(cb.remaining))
                         put("percentage_spent", "${(cb.percentage * 100).toInt()}%")
-                        put("is_over_budget", cb.isOverBudget)
+                        put("is_over_budget", isCatOver)
+                        if (isCatOver) {
+                            put("status", "ĐÃ VƯỢT HẠN MỨC")
+                            put("over_budget_amount_vnd", catOverAmount)
+                            put("over_budget_amount_formatted", formatVndAmount(catOverAmount))
+                            put("category_verdict", "Đã vượt hạn mức ${formatVndAmount(catOverAmount)} (Hạn mức: ${formatVndAmount(cb.budgetAmount)}, Đã chi: ${formatVndAmount(cb.spentAmount)}). KHÔNG nói 'còn thiếu', hãy nói 'đã vượt hạn mức ${formatVndAmount(catOverAmount)}'.")
+                        } else {
+                            put("status", "TRONG HẠN MỨC")
+                            put("over_budget_amount_vnd", 0L)
+                            put("over_budget_amount_formatted", "0 đ")
+                            put("category_verdict", "Còn lại ${formatVndAmount(cb.remaining)} trong hạn mức.")
+                        }
                     })
                 }
 
@@ -419,6 +463,18 @@ class LocalToolExecutor(private val dbHelper: FinanceDatabaseHelper) {
             val fallback = targetCats.find { it.name.equals("Khác", ignoreCase = true) }
                 ?: targetCats.firstOrNull()
             return Pair(fallback, true)
+        }
+
+        /**
+         * Định dạng số tiền VNĐ chuẩn mực kèm phân tách hàng nghìn bằng dấu chấm (VD: 18.310.000 đ)
+         */
+        fun formatVndAmount(amount: Long): String {
+            val symbols = java.text.DecimalFormatSymbols(java.util.Locale.forLanguageTag("vi-VN")).apply {
+                groupingSeparator = '.'
+                decimalSeparator = ','
+            }
+            val formatter = java.text.DecimalFormat("#,###", symbols)
+            return "${formatter.format(amount)} đ"
         }
     }
 }

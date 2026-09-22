@@ -262,7 +262,19 @@ class AiService(private val dbHelper: FinanceDatabaseHelper) {
                     }
                 }
             } else if (finalExplanation.isNotBlank()) {
-                finalExplanation
+                var cleanExplanation = finalExplanation
+                // Guardrail: Xử lý lỗi dịch ngược của mô hình LLM nhỏ khi dịch "remaining" thành "còn thiếu"
+                // Khi đang trong ngữ cảnh chi tiêu vượt ngân sách, không để câu "còn thiếu [X] đ" gây hiểu lầm
+                if (cleanExplanation.contains("còn thiếu", ignoreCase = true)) {
+                    if (cleanExplanation.contains("vượt", ignoreCase = true) || 
+                        cleanExplanation.contains("lố", ignoreCase = true) || 
+                        cleanExplanation.contains("ngân sách", ignoreCase = true)) {
+                        cleanExplanation = cleanExplanation
+                            .replace(Regex("và còn thiếu\\s+[0-9.,]+(đ| đồng| ₫)?", RegexOption.IGNORE_CASE), "")
+                            .replace(Regex(",?\\s*còn thiếu\\s+[0-9.,]+(đ| đồng| ₫)?", RegexOption.IGNORE_CASE), "")
+                    }
+                }
+                cleanExplanation
             } else {
                 "Xin chào! Mình đã tiếp nhận thông tin của bạn."
             }

@@ -82,10 +82,19 @@ object AgentPrompts {
                - Hỏi tổng chi tiêu tháng này (VD: "tháng này tiêu hết bao nhiêu?", "đã tiêu bao nhiêu tiền?", "tổng thu chi thế nào?"):
                  -> BẮT BUỘC gọi tool 'query_balance_summary'.
                - Hỏi xem đã vượt ngân sách tổng chưa (VD: "đã vượt ngân sách chưa?", "có bị chi tiêu lố không?"):
-                 -> Gọi 'query_balance_summary' để kiểm tra trường 'is_over_budget', tỷ lệ phần trăm đã tiêu và số tiền còn lại/vượt.
+                 -> Gọi 'query_balance_summary' để kiểm tra trường 'is_over_budget', 'over_budget_amount_formatted', 'budget_verdict'.
                - Hỏi ngân sách danh mục cụ thể (VD: "danh mục ăn uống đã vượt chưa?", "hạn mức đi lại còn bao nhiêu tiền?"):
                  -> Gọi 'query_category_budget' với 'category_name' (VD: "Ăn uống", "Đi lại", "Sức khỏe").
-               - Khi trả lời về ngân sách: Luôn nêu rõ số tiền đã tiêu, hạn mức, số tiền còn lại và CẢNH BÁO VƯỢT HẠN MỨC rõ ràng nếu chi tiêu vượt mức.
+               - NGUYÊN TẮC BÁO CÁO NGÂN SÁCH (CỰC KỲ QUAN TRỌNG, KHÔNG ĐƯỢC SAI SÓT):
+                 + BẮT BUỘC sử dụng chính xác các chuỗi định dạng tiền tệ sẵn có từ tool (như 'total_expense_formatted', 'over_budget_amount_formatted', 'budget_verdict'). Tuyệt đối không tự ý chia nhỏ, cắt bớt hay làm sai lệch số 0 (Ví dụ: 18.310.000 đ thì phải viết đủ 18.310.000 đ, CẤM viết thành 1.831.000 đ).
+                 + KHI ĐÃ VƯỢT NGÂN SÁCH ('is_over_budget' = true):
+                   * TUYỆT ĐỐI CẤM dùng từ "còn thiếu" (đây là chi tiêu vượt hạn mức, không phải thiếu tiền tiết kiệm hay nợ nần).
+                   * BẮT BUỘC khẳng định: "Bạn đang VƯỢT NGÂN SÁCH [số tiền vượt]" (dùng trường 'over_budget_amount_formatted').
+                   * Nếu chi tiêu vượt thu nhập: Nói rõ "Chi tiêu vượt thu nhập [số tiền]" (dùng trường 'net_deficit_formatted').
+                 + KHI CHƯA VƯỢT NGÂN SÁCH ('is_over_budget' = false):
+                   * Nói rõ: "Còn lại [số tiền] trong ngân sách" (dùng 'remaining_budget_formatted').
+                 + Đối với danh mục bị vượt hạn mức:
+                   * Nêu rõ: "Danh mục [Tên]: Hạn mức [Hạn mức], đã tiêu [Đã tiêu], VƯỢT HẠN MỨC [Số tiền vượt]" (lấy từ 'over_budget_categories').
                - Tìm kiếm lịch sử chi tiêu cũ: Gọi 'find_transactions'.
                - Chỉnh sửa hoặc xóa giao dịch: Gọi 'update_transaction' hoặc 'delete_transaction'.
                - Tạo danh mục mới khi quá khác: Gọi 'create_category'.
