@@ -586,7 +586,32 @@ fun ChatMessageItem(
                                         onCancel = { onCancelAction(index) }
                                     )
                                 }
+                                ToolActionType.SET_OVERALL_BUDGET -> {
+                                    SetOverallBudgetCard(
+                                        action = action,
+                                        cardStatus = currentCardStatus,
+                                        onConfirm = { onConfirmAction(index) },
+                                        onCancel = { onCancelAction(index) }
+                                    )
+                                }
+                                ToolActionType.SET_CATEGORY_BUDGET -> {
+                                    SetCategoryBudgetCard(
+                                        action = action,
+                                        cardStatus = currentCardStatus,
+                                        onConfirm = { onConfirmAction(index) },
+                                        onCancel = { onCancelAction(index) }
+                                    )
+                                }
+                                ToolActionType.TRANSFER_CATEGORY -> {
+                                    TransferCategoryCard(
+                                        action = action,
+                                        cardStatus = currentCardStatus,
+                                        onConfirm = { onConfirmAction(index) },
+                                        onCancel = { onCancelAction(index) }
+                                    )
+                                }
                             }
+
                         }
                     }
                 }
@@ -1333,6 +1358,336 @@ fun CreateCategoryCard(
                             color = MaterialTheme.colorScheme.outline,
                             fontSize = 13.sp
                         )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// 5. Thẻ Xem Trước Đặt Ngân Sách Tổng Tháng
+@Composable
+fun SetOverallBudgetCard(
+    action: ToolAction,
+    cardStatus: CardStatus,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit
+) {
+    val accentColor = Color(0xFF0EA5E9) // Sky blue
+
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, accentColor.copy(alpha = 0.35f), RoundedCornerShape(16.dp))
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "ĐẶT NGÂN SÁCH TỔNG THÁNG",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = accentColor
+                )
+                Text(text = "🎯", fontSize = 20.sp)
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            if (action.oldBudget > 0L) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Hạn mức cũ: ", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                    Text(
+                        text = Formatters.formatVnd(action.oldBudget),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.outline,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Hạn mức mới: ", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                Text(
+                    text = Formatters.formatVnd(action.newBudget),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = accentColor
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            when (cardStatus) {
+                CardStatus.PENDING -> {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f), shape = RoundedCornerShape(10.dp)) {
+                            Text("Hủy")
+                        }
+                        Button(
+                            onClick = onConfirm, modifier = Modifier.weight(1.5f),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = accentColor)
+                        ) {
+                            Icon(imageVector = Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Xác Nhận Đặt", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+                CardStatus.CONFIRMED -> {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                            .background(accentColor.copy(alpha = 0.12f)).padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("✓ Đã cập nhật ngân sách tổng tháng", color = accentColor, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                }
+                CardStatus.CANCELLED -> {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant).padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("Đã bỏ qua", color = MaterialTheme.colorScheme.outline, fontSize = 13.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// 6. Thẻ Xem Trước Đặt Hạn Mức Danh Mục
+@Composable
+fun SetCategoryBudgetCard(
+    action: ToolAction,
+    cardStatus: CardStatus,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit
+) {
+    val accentColor = Color(0xFF8B5CF6) // Purple
+
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, accentColor.copy(alpha = 0.35f), RoundedCornerShape(16.dp))
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "ĐẶT HẠN MỨC DANH MỤC",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = accentColor
+                )
+                Text(text = action.categoryIcon, fontSize = 20.sp)
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Danh mục: ", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                Text(
+                    text = "${action.categoryIcon} ${action.categoryName}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            if (action.oldBudget > 0L) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Hạn mức cũ: ", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                    Text(
+                        text = Formatters.formatVnd(action.oldBudget),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.outline,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Hạn mức mới: ", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                Text(
+                    text = Formatters.formatVnd(action.newBudget),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = accentColor
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            when (cardStatus) {
+                CardStatus.PENDING -> {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f), shape = RoundedCornerShape(10.dp)) {
+                            Text("Hủy")
+                        }
+                        Button(
+                            onClick = onConfirm, modifier = Modifier.weight(1.5f),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = accentColor)
+                        ) {
+                            Icon(imageVector = Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Xác Nhận Đặt", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+                CardStatus.CONFIRMED -> {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                            .background(accentColor.copy(alpha = 0.12f)).padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("✓ Đã cập nhật hạn mức ${action.categoryName}", color = accentColor, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                }
+                CardStatus.CANCELLED -> {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant).padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("Đã bỏ qua", color = MaterialTheme.colorScheme.outline, fontSize = 13.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// 7. Thẻ Xem Trước Chuyển Giao Dịch Sang Danh Mục Khác
+@Composable
+fun TransferCategoryCard(
+    action: ToolAction,
+    cardStatus: CardStatus,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit
+) {
+    val accentColor = Color(0xFFF59E0B) // Amber
+
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, accentColor.copy(alpha = 0.35f), RoundedCornerShape(16.dp))
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "CHUYỂN DANH MỤC GIAO DỊCH",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = accentColor
+                )
+                Text(text = "🔄", fontSize = 18.sp)
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            if (action.targetTransaction != null) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Giao dịch: ", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                    Text(
+                        text = "${action.categoryIcon} ${action.note} (${Formatters.formatVnd(action.amount)})",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Từ: ", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                    Text(
+                        text = "${action.categoryIcon} ${action.categoryName}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Sang: ", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                    Text(
+                        text = "${action.targetCategoryIcon} ${action.targetCategoryName}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = accentColor
+                    )
+                }
+            } else {
+                Text(
+                    text = "⚠️ Không tìm thấy giao dịch \"${action.searchKeyword}\" để chuyển.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            when (cardStatus) {
+                CardStatus.PENDING -> {
+                    if (action.targetTransaction != null) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f), shape = RoundedCornerShape(10.dp)) {
+                                Text("Hủy")
+                            }
+                            Button(
+                                onClick = onConfirm, modifier = Modifier.weight(1.5f),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = accentColor)
+                            ) {
+                                Icon(imageVector = Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Xác Nhận Chuyển", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    } else {
+                        OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp)) {
+                            Text("Đóng")
+                        }
+                    }
+                }
+                CardStatus.CONFIRMED -> {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                            .background(accentColor.copy(alpha = 0.12f)).padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("✓ Đã chuyển sang ${action.targetCategoryIcon} ${action.targetCategoryName}", color = accentColor, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                }
+                CardStatus.CANCELLED -> {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant).padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("Đã bỏ qua", color = MaterialTheme.colorScheme.outline, fontSize = 13.sp)
                     }
                 }
             }

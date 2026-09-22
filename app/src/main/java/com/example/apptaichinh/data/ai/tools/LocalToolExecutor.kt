@@ -17,7 +17,10 @@ class LocalToolExecutor(private val dbHelper: FinanceDatabaseHelper) {
             "query_balance_summary",
             "query_category_budget",
             "find_transactions",
-            "query_categories"
+            "query_categories",
+            "query_daily_summary",
+            "query_top_expenses",
+            "query_spending_trend"
         )
     }
 
@@ -219,8 +222,200 @@ class LocalToolExecutor(private val dbHelper: FinanceDatabaseHelper) {
                 }.toString()
             }
 
-            else -> JSONObject().apply { put("error", "Unknown tool: $toolName") }.toString()
+            else -> {
+                // Thử route đến các query tool mở rộng
+                when (toolName) {
+                    "query_daily_summary" -> executeDailySummary(args)
+                    "query_top_expenses" -> executeTopExpenses(args)
+                    "query_spending_trend" -> executeSpendingTrend(args)
+                    else -> JSONObject().apply { put("error", "Unknown tool: $toolName") }.toString()
+                }
+            }
         }
+    }
+
+    // =========================================================================
+    // QUERY TOOL MỞ RỘNG: query_daily_summary
+    // =========================================================================
+    private fun executeDailySummary(args: JSONObject): String {
+        val dateOffset = args.optInt("date_offset", 0)
+        val cal = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, dateOffset) }
+        val startCal = cal.clone() as Calendar
+        startCal.set(Calendar.HOUR_OF_DAY, 0)
+        startCal.set(Calendar.MINUTE, 0)
+        startCal.set(Calendar.SECOND, 0)
+        startCal.set(Calendar.MILLISECOND, 0)
+        val endCal = cal.clone() as Calendar
+        endCal.set(Calendar.HOUR_OF_DAY, 23)
+        endCal.set(Calendar.MINUTE, 59)
+        endCal.set(Calendar.SECOND, 59)
+        endCal.set(Calendar.MILLISECOND, 999)
+
+        val startMs = startCal.timeInMillis
+        val endMs = endCal.timeInMillis
+
+        // Lấy tất cả giao dịch trong ngày từ DB
+        val db = dbHelper.readableDatabase
+        val sql = """
+            SELECT t.type, SUM(t.amount) as total
+            FROM transactions t
+            WHERE t.date_epoch >= ? AND t.date_epoch <= ?
+            GROUP BY t.type
+        """.trimIndent()
+        var income = 0L
+        var expense = 0L
+        val cursor = db.rawQuery(sql, arrayOf(startMs.toString(), endMs.toString()))
+        cursor.use {
+            while (it.moveToNext()) {
+                val type = it.getString(it.getColumnIndexOrThrow("type"))
+                val total = it.getLong(it.getColumnIndexOrThrow("total"))
+                if (type == "INCOME") income = total else if (type == "EXPENSE") expense = total
+            }
+        }
+
+        // Chi tiết danh mục trong ngày
+        val sqlDetail = """
+            SELECT c.name, c.icon, t.type, SUM(t.amount) as total
+            FROM transactions t
+            INNER JOIN categories c ON t.category_id = c.id
+            WHERE t.date_epoch >= ? AND t.date_epoch <= ?
+            GROUP BY c.id, t.type
+            ORDER BY total DESC
+        """.trimIndent()
+        val detailArr = org.json.JSONArray()
+        val cursor2 = db.rawQuery(sqlDetail, arrayOf(startMs.toString(), endMs.toString()))
+        cursor2.use {
+            while (it.moveToNext()) {
+                val catName = it.getString(it.getColumnIndexOrThrow("name"))
+                val catIcon = it.getString(it.getColumnIndexOrThrow("icon"))
+                val txType = it.getString(it.getColumnIndexOrThrow("type"))
+                val total = it.getLong(it.getColumnIndexOrThrow("total"))
+                val sign = if (txType == "INCOME") "+" else "-"
+                detailArr.put("$catIcon $catName: $sign${formatVndAmount(total)}")
+            }
+        }
+
+        val dayLabel = when (dateOffset) {
+            0 -> "Hôm nay"
+            -1 -> "Hôm qua"
+            else -> "$dateOffset ngày trước"
+        }
+        val net = income - expense
+        val netLabel = if (net >= 0) "DƯ ${formatVndAmount(net)}" else "ÂM ${formatVndAmount(-net)}"
+
+        return JSONObject().apply {
+            put("day_label", dayLabel)
+            put("date", "${cal.get(Calendar.DAY_OF_MONTH)}/${cal.get(Calendar.MONTH)+1}/${cal.get(Calendar.YEAR)}")
+            put("total_income_formatted", formatVndAmount(income))
+            put("total_expense_formatted", formatVndAmount(expense))
+            put("net_balance_label", netLabel)
+            put("category_breakdown", detailArr)
+            put("summary", if (expense == 0L && income == 0L)
+                "$dayLabel chưa có giao dịch nào được ghi."
+            else
+                "$dayLabel: Thu ${formatVndAmount(income)}, Chi ${formatVndAmount(expense)}, $netLabel."
+            )
+        }.toString()
+    }
+
+    // =========================================================================
+    // QUERY TOOL MỞ RỘNG: query_top_expenses
+    // =========================================================================
+    private fun executeTopExpenses(args: JSONObject): String {
+        val limit = args.optInt("limit", 5).coerceIn(1, 10)
+        val offset = args.optInt("month_offset", 0)
+        val targetCal = Calendar.getInstance().apply { add(Calendar.MONTH, offset) }
+        val y = targetCal.get(Calendar.YEAR)
+        val m = targetCal.get(Calendar.MONTH)
+
+        val txList = dbHelper.getTransactionsByMonth(y, m, typeFilter = "EXPENSE")
+        val topList = txList.sortedByDescending { it.amount }.take(limit)
+
+        val result = org.json.JSONArray()
+        topList.forEachIndexed { i, tx ->
+            result.put("${i+1}. ${tx.categoryIcon} ${tx.categoryName} - ${tx.note}: ${formatVndAmount(tx.amount)}")
+        }
+
+        val totalExpense = txList.sumOf { it.amount }
+        val monthLabel = when (offset) {
+            0 -> "tháng này"
+            -1 -> "tháng trước"
+            else -> "$offset tháng trước"
+        }
+
+        return JSONObject().apply {
+            put("month_label", monthLabel)
+            put("total_expense_formatted", formatVndAmount(totalExpense))
+            put("top_expenses", result)
+            put("count", topList.size)
+            put("summary",
+                if (topList.isEmpty()) "Chưa có khoản chi nào $monthLabel."
+                else "Top ${topList.size} khoản chi lớn nhất $monthLabel (tổng chi: ${formatVndAmount(totalExpense)}): ${topList.joinToString(", ") { "${it.categoryIcon}${it.note} ${formatVndAmount(it.amount)}" }}"
+            )
+        }.toString()
+    }
+
+    // =========================================================================
+    // QUERY TOOL MỞ RỘNG: query_spending_trend
+    // =========================================================================
+    private fun executeSpendingTrend(args: JSONObject): String {
+        val compareMonths = args.optInt("compare_months", 1).coerceIn(1, 3)
+        val nowCal = Calendar.getInstance()
+        val currentY = nowCal.get(Calendar.YEAR)
+        val currentM = nowCal.get(Calendar.MONTH)
+
+        val prevCal = Calendar.getInstance().apply { add(Calendar.MONTH, -compareMonths) }
+        val prevY = prevCal.get(Calendar.YEAR)
+        val prevM = prevCal.get(Calendar.MONTH)
+
+        val currentSummary = dbHelper.getMonthSummary(currentY, currentM)
+        val prevSummary = dbHelper.getMonthSummary(prevY, prevM)
+
+        val currentCatStats = dbHelper.getCategoryExpenseStats(currentY, currentM)
+        val prevCatStats = dbHelper.getCategoryExpenseStats(prevY, prevM)
+
+        val diff = currentSummary.totalExpense - prevSummary.totalExpense
+        val diffAbs = Math.abs(diff)
+        val pct = if (prevSummary.totalExpense > 0)
+            ((diff.toFloat() / prevSummary.totalExpense.toFloat()) * 100).toInt()
+        else 0
+
+        val trend = when {
+            diff > 0 -> "TĂNG ${formatVndAmount(diffAbs)} (+${pct}%)"
+            diff < 0 -> "GIẢM ${formatVndAmount(diffAbs)} (${pct}%)"
+            else -> "KHÔNG ĐỔI"
+        }
+
+        // Tìm danh mục tăng nhiều nhất
+        val catChanges = org.json.JSONArray()
+        for (curr in currentCatStats) {
+            val prev = prevCatStats.find { it.categoryName == curr.categoryName }
+            val prevAmt = prev?.amount ?: 0L
+            val catDiff = curr.amount - prevAmt
+            if (catDiff != 0L) {
+                val sign = if (catDiff > 0) "+" else ""
+                catChanges.put("${curr.categoryIcon} ${curr.categoryName}: $sign${formatVndAmount(catDiff)}")
+            }
+        }
+
+        val currentMonthLabel = "${currentM+1}/${currentY}"
+        val prevMonthLabel = "${prevM+1}/${prevY}"
+
+        return JSONObject().apply {
+            put("current_month", currentMonthLabel)
+            put("prev_month", prevMonthLabel)
+            put("current_expense_formatted", formatVndAmount(currentSummary.totalExpense))
+            put("prev_expense_formatted", formatVndAmount(prevSummary.totalExpense))
+            put("current_income_formatted", formatVndAmount(currentSummary.totalIncome))
+            put("prev_income_formatted", formatVndAmount(prevSummary.totalIncome))
+            put("expense_trend", trend)
+            put("category_changes", catChanges)
+            put("summary",
+                "So sánh $currentMonthLabel vs $prevMonthLabel: Chi tiêu $trend. " +
+                "Tháng $currentMonthLabel tổng chi ${formatVndAmount(currentSummary.totalExpense)}, " +
+                "tháng $prevMonthLabel là ${formatVndAmount(prevSummary.totalExpense)}."
+            )
+        }.toString()
     }
 
     companion object {
@@ -366,7 +561,7 @@ class LocalToolExecutor(private val dbHelper: FinanceDatabaseHelper) {
             }
 
             val partsWithAmount = finalClauses.filter { extractAmountFromText(it) != null }
-            return if (partsWithAmount.size > 1) partsWithAmount.take(6) else listOf(text)
+            return if (partsWithAmount.size > 1) partsWithAmount.take(10) else listOf(text)
         }
 
         private fun cleanClauseLeadingNoise(clause: String): String {

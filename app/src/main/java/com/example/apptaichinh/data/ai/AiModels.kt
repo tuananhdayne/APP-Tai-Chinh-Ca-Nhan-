@@ -14,7 +14,10 @@ enum class ToolActionType {
     CREATE,
     UPDATE,
     DELETE,
-    CREATE_CATEGORY
+    CREATE_CATEGORY,
+    SET_OVERALL_BUDGET,      // Đặt ngân sách tổng tháng
+    SET_CATEGORY_BUDGET,     // Đặt hạn mức ngân sách danh mục
+    TRANSFER_CATEGORY        // Chuyển giao dịch sang danh mục khác
 }
 
 enum class CardStatus {
@@ -46,6 +49,15 @@ data class ToolAction(
 
     // Từ khóa tìm kiếm nếu không tìm thấy bản ghi khớp
     val searchKeyword: String = "",
+
+    // Thông tin cho SET_OVERALL_BUDGET và SET_CATEGORY_BUDGET
+    val newBudget: Long = 0L,
+    val oldBudget: Long = 0L,     // Hạn mức cũ để hiển thị so sánh trên Preview Card
+
+    // Thông tin cho TRANSFER_CATEGORY (chuyển giao dịch sang danh mục khác)
+    val targetCategoryId: Long = 0L,
+    val targetCategoryName: String = "",
+    val targetCategoryIcon: String = "📦",
 
     // Trạng thái độc lập của từng thẻ trong chuỗi đa hành động (PENDING, CONFIRMED, CANCELLED)
     val status: CardStatus = CardStatus.PENDING

@@ -176,7 +176,7 @@ class AiService(private val dbHelper: FinanceDatabaseHelper) {
 
             val pendingToolActions = mutableListOf<ToolAction>()
             var finalExplanation = ""
-            val maxIterations = 6 // Tăng lên tối đa 6 bước suy luận (hỗ trợ tối đa 6 action)
+            val maxIterations = 10 // Tăng lên tối đa 10 bước suy luận (hỗ trợ tối đa 10 action)
 
             // --- VÒNG LẶP ĐA TÁC TỬ (MULTI-STEP REACT LOOP) ---
             for (iteration in 0 until maxIterations) {
@@ -254,8 +254,8 @@ class AiService(private val dbHelper: FinanceDatabaseHelper) {
                         })
                         hasQueryToolExecuted = true
                     } else {
-                        // B. Action Tool (create / update / delete) - hỗ trợ tối đa 6 action
-                        if (pendingToolActions.size < 6) {
+                        // B. Action Tool (create / update / delete) - hỗ trợ tối đa 10 action
+                        if (pendingToolActions.size < 10) {
                             val action = processToolAction(functionName, argsJson, categories, userMessage)
                             pendingToolActions.add(action)
                         }
@@ -278,7 +278,7 @@ class AiService(private val dbHelper: FinanceDatabaseHelper) {
             // Chống Hallucination của LLM:
             // Nếu người dùng nhập câu thu/chi rõ ràng (có số tiền phát hiện được) nhưng LLM "chém gió" bằng text
             // (VD: "Đã thêm khoản chi tiêu vào sổ...") mà quên gọi create_transaction:
-            // Hệ thống tự động phục hồi hành động (Auto-Recovery đa mệnh đề tối đa 6 khoản) để luôn có Phiếu Xem Trước cho người dùng bấm Lưu!
+            // Hệ thống tự động phục hồi hành động (Auto-Recovery đa mệnh đề tối đa 10 khoản) để luôn có Phiếu Xem Trước cho người dùng bấm Lưu!
             if (pendingToolActions.isEmpty()) {
                 val clauses = LocalToolExecutor.splitMultiItemText(userMessage)
                 val lowerMsg = userMessage.lowercase()
@@ -287,7 +287,7 @@ class AiService(private val dbHelper: FinanceDatabaseHelper) {
                         lowerMsg.contains("xem lại") || lowerMsg.contains("tìm") || lowerMsg.contains("kiểm tra")
 
                 if (!isQueryIntent) {
-                    for (clause in clauses.take(6)) {
+                    for (clause in clauses.take(10)) {
                         val detectedAmount = LocalToolExecutor.extractAmountFromText(clause)
                         if (detectedAmount != null && detectedAmount > 0) {
                             val isIncome = LocalToolExecutor.isIncomeIntent(clause)
@@ -376,7 +376,7 @@ class AiService(private val dbHelper: FinanceDatabaseHelper) {
                 AiResponse.ToolCallReply(
                     toolAction = pendingToolActions.first(),
                     assistantExplanation = textOutput,
-                    toolActions = pendingToolActions.take(6)
+                    toolActions = pendingToolActions.take(10)
                 )
             } else {
                 AiResponse.TextReply(textOutput)
@@ -504,12 +504,65 @@ class AiService(private val dbHelper: FinanceDatabaseHelper) {
                 )
             }
 
+            "set_overall_budget" -> {
+                val newBudgetAmount = args.optLong("amount", 0L)
+                val oldBudgetAmount = dbHelper.getOverallBudgetLimit()
+                ToolAction(
+                    type = ToolActionType.SET_OVERALL_BUDGET,
+                    newBudget = newBudgetAmount,
+                    oldBudget = oldBudgetAmount,
+                    note = "Đặt ngân sách tổng: ${com.example.apptaichinh.ui.components.Formatters.formatVnd(newBudgetAmount)}"
+                )
+            }
+
+            "set_category_budget" -> {
+                val catName = args.optString("category_name", "")
+                val newBudgetAmount = args.optLong("amount", 0L)
+                val matchedCat = categories.find { it.name.equals(catName, ignoreCase = true) }
+                    ?: LocalToolExecutor.matchBestCategory(catName, "EXPENSE", categories.filter { it.type == "EXPENSE" }).first
+                    ?: categories.firstOrNull { it.type == "EXPENSE" }
+                val oldBudget = matchedCat?.budget ?: 0L
+                ToolAction(
+                    type = ToolActionType.SET_CATEGORY_BUDGET,
+                    categoryId = matchedCat?.id ?: 0L,
+                    categoryName = matchedCat?.name ?: catName,
+                    categoryIcon = matchedCat?.icon ?: "📦",
+                    categoryColorHex = matchedCat?.colorHex ?: "#607D8B",
+                    newBudget = newBudgetAmount,
+                    oldBudget = oldBudget,
+                    note = "Hạn mức ${matchedCat?.name ?: catName}: ${com.example.apptaichinh.ui.components.Formatters.formatVnd(newBudgetAmount)}"
+                )
+            }
+
+            "transfer_category" -> {
+                val searchKeyword = args.optString("search_keyword", "")
+                val targetCatName = args.optString("target_category_name", "")
+                val amount = if (args.has("amount")) args.optLong("amount") else null
+                val foundTx = dbHelper.searchTransactions(searchKeyword, amount).firstOrNull()
+                val targetCat = categories.find { it.name.equals(targetCatName, ignoreCase = true) }
+                    ?: LocalToolExecutor.matchBestCategory(targetCatName, "EXPENSE", categories).first
+                ToolAction(
+                    type = ToolActionType.TRANSFER_CATEGORY,
+                    targetTransaction = foundTx,
+                    categoryId = foundTx?.categoryId ?: 0L,
+                    categoryName = foundTx?.categoryName ?: "",
+                    categoryIcon = foundTx?.categoryIcon ?: "📦",
+                    targetCategoryId = targetCat?.id ?: 0L,
+                    targetCategoryName = targetCat?.name ?: targetCatName,
+                    targetCategoryIcon = targetCat?.icon ?: "📦",
+                    searchKeyword = searchKeyword,
+                    amount = foundTx?.amount ?: 0L,
+                    note = foundTx?.note ?: searchKeyword
+                )
+            }
+
             else -> ToolAction(
                 type = ToolActionType.CREATE,
                 note = args.optString("note", "")
             )
         }
     }
+
 
     companion object {
         /**

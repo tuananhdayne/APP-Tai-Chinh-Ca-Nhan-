@@ -642,20 +642,21 @@ class AiSequentialActionChainTest {
     }
 
     // =========================================================================
-    // CHUỖI 13: 1 PROMPT CHỨA TỐI ĐA 6 HÀNH ĐỘNG (MAX 6 ACTIONS CAP)
+    // CHUỖI 13: 1 PROMPT CHỨA TỐI ĐA 10 HÀNH ĐỘNG (MAX 10 ACTIONS CAP)
     // =========================================================================
 
     @Test
-    fun testChain13_SinglePrompt_MaxSixActionsCap() {
-        val prompt = "tiền nhà 1000k, ăn sáng 20k, đổ xăng 50k, cafe 35k, mua áo 150k, xem phim 90k, mua trà sữa 45k"
+    fun testChain13_SinglePrompt_MaxTenActionsCap() {
+        val prompt = "tiền nhà 1000k, ăn sáng 20k, đổ xăng 50k, cafe 35k, mua áo 150k, xem phim 90k, mua trà sữa 45k, cắt tóc 60k, rửa xe 30k, nạp điện thoại 100k, gửi xe 5k"
+        // Tổng cộng có 11 khoản
 
-        // Tối đa 6 khoản được bóc tách
+        // Tối đa 10 khoản được bóc tách
         val clauses = LocalToolExecutor.splitMultiItemText(prompt)
-        assertEquals(6, clauses.size)
+        assertEquals(10, clauses.size)
 
         val amounts = clauses.mapNotNull { LocalToolExecutor.extractAmountFromText(it) }
-        assertEquals(listOf(1000000L, 20000L, 50000L, 35000L, 150000L, 90000L), amounts)
-        assertEquals(1345000L, amounts.sum())
+        assertEquals(listOf(1000000L, 20000L, 50000L, 35000L, 150000L, 90000L, 45000L, 60000L, 30000L, 100000L), amounts)
+        assertEquals(1580000L, amounts.sum())
     }
 
     // =========================================================================

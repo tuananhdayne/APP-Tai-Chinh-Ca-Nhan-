@@ -13,7 +13,7 @@ class OpenAiToolSchemasTest {
     @Test
     fun testToolDefinitionsCountAndNames() {
         val tools = ToolDefinitions.getAllTools()
-        assertEquals(8, tools.length())
+        assertEquals(14, tools.length())
 
         val toolNames = mutableListOf<String>()
         for (i in 0 until tools.length()) {
@@ -23,17 +23,23 @@ class OpenAiToolSchemasTest {
             toolNames.add(functionObj.getString("name"))
         }
 
-        // Query tools (4 tools)
+        // Query tools (7 tools)
         assertTrue(toolNames.contains("query_balance_summary"))
         assertTrue(toolNames.contains("query_category_budget"))
         assertTrue(toolNames.contains("find_transactions"))
         assertTrue(toolNames.contains("query_categories"))
+        assertTrue(toolNames.contains("query_daily_summary"))
+        assertTrue(toolNames.contains("query_top_expenses"))
+        assertTrue(toolNames.contains("query_spending_trend"))
 
-        // Action tools (4 tools)
+        // Action tools (7 tools)
         assertTrue(toolNames.contains("create_transaction"))
         assertTrue(toolNames.contains("update_transaction"))
         assertTrue(toolNames.contains("delete_transaction"))
         assertTrue(toolNames.contains("create_category"))
+        assertTrue(toolNames.contains("set_overall_budget"))
+        assertTrue(toolNames.contains("set_category_budget"))
+        assertTrue(toolNames.contains("transfer_category"))
     }
 
     @Test

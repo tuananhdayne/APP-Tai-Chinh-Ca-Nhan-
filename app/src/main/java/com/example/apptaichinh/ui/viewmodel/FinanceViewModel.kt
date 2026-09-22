@@ -138,6 +138,9 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                         ToolActionType.UPDATE -> "Mình tìm thấy giao dịch cần sửa. Bạn hãy kiểm tra thông tin thay đổi bên dưới:"
                                         ToolActionType.DELETE -> "Cảnh báo: Bạn có chắc chắn muốn xóa giao dịch sau không?"
                                         ToolActionType.CREATE_CATEGORY -> "Mình đã chuẩn bị đề xuất tạo danh mục mới. Bạn hãy kiểm tra và xác nhận nhé!"
+                                        ToolActionType.SET_OVERALL_BUDGET -> "Mình sẽ đặt lại ngân sách tổng tháng. Bạn hãy xác nhận bên dưới nhé!"
+                                        ToolActionType.SET_CATEGORY_BUDGET -> "Mình sẽ cập nhật hạn mức ngân sách cho danh mục. Bạn hãy xác nhận bên dưới nhé!"
+                                        ToolActionType.TRANSFER_CATEGORY -> "Mình tìm thấy giao dịch cần chuyển danh mục. Bạn hãy xem và xác nhận bên dưới!"
                                     }
                                 }
                             },
@@ -250,8 +253,31 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                         repository.addCategory(newCat)
                         confirmedSummaries.add("Tạo danh mục: ${action.categoryIcon} ${action.categoryName}")
                     }
+
+                    ToolActionType.SET_OVERALL_BUDGET -> {
+                        // Đặt ngân sách tổng tháng
+                        repository.updateOverallBudget(action.newBudget)
+                        confirmedSummaries.add("Ngân sách tổng: ${com.example.apptaichinh.ui.components.Formatters.formatVnd(action.newBudget)}")
+                    }
+
+                    ToolActionType.SET_CATEGORY_BUDGET -> {
+                        // Đặt hạn mức danh mục
+                        if (action.categoryId > 0L) {
+                            repository.updateCategoryBudget(action.categoryId, action.newBudget)
+                            confirmedSummaries.add("Hạn mức ${action.categoryIcon} ${action.categoryName}: ${com.example.apptaichinh.ui.components.Formatters.formatVnd(action.newBudget)}")
+                        }
+                    }
+
+                    ToolActionType.TRANSFER_CATEGORY -> {
+                        // Chuyển giao dịch sang danh mục mới
+                        val sourceTx = action.targetTransaction ?: continue
+                        val updatedTx = sourceTx.copy(categoryId = action.targetCategoryId)
+                        repository.updateTransaction(updatedTx)
+                        confirmedSummaries.add("Chuyển: ${action.categoryIcon} → ${action.targetCategoryIcon} ${action.targetCategoryName} (${action.note})")
+                    }
                 }
             }
+
 
             val confirmNoticeText = if (actionsToExecute.size > 1) {
                 val sb = StringBuilder("✓ Đã ghi vào sổ ${actionsToExecute.size} khoản thành công:\n")

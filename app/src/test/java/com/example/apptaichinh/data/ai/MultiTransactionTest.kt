@@ -638,4 +638,52 @@ class MultiTransactionTest {
         assertEquals("Sau confirm thẻ 2: còn 1 thẻ PENDING", 1, pendingCount2)
         assertFalse("Chỉ còn 1 PENDING → ẩn banner batch", pendingCount2 >= 2)
     }
+
+    // ========================================================
+    // KIỂM THỬ 16: Hỗ trợ tối đa 10 action (Test 8 action)
+    // ========================================================
+
+    @Test
+    fun test16_MaxActionsSupport_8Actions() {
+        // Mô phỏng người dùng nhập 8 giao dịch
+        val inputText = "nay đổ xăng 50k, ăn sáng 30k, uống cafe 40k, mua trà đá 10k, ăn trưa 45k, mua bút 15k, gửi xe 5k, nạp điện thoại 100k"
+        
+        // Giả lập Auto-Recovery (splitMultiItemText)
+        val clauses = LocalToolExecutor.splitMultiItemText(inputText)
+        assertEquals("Phải tách được 8 mệnh đề", 8, clauses.size)
+
+        // LLM tạo ra 8 action tương ứng
+        val actions = mutableListOf<ToolAction>()
+        for (clause in clauses) {
+            val amount = LocalToolExecutor.extractAmountFromText(clause) ?: continue
+            val (cat, _) = LocalToolExecutor.matchBestCategory(clause, "EXPENSE", categories)
+            val matchedCat = cat ?: categories.first { it.type == "EXPENSE" }
+            
+            actions.add(
+                ToolAction(
+                    type = ToolActionType.CREATE,
+                    amount = amount,
+                    transactionType = "EXPENSE",
+                    categoryId = matchedCat.id,
+                    categoryName = matchedCat.name,
+                    categoryIcon = matchedCat.icon,
+                    categoryColorHex = matchedCat.colorHex,
+                    note = clause
+                )
+            )
+        }
+
+        assertEquals("Phải tạo được 8 action", 8, actions.size)
+
+        val msg = ChatMessage(
+            sender = MessageSender.ASSISTANT,
+            text = "Mình đã chuẩn bị 8 phiếu ghi chép:",
+            toolAction = actions.first(),
+            toolActions = actions,
+            cardStatus = CardStatus.PENDING
+        )
+
+        assertEquals("Message phải chứa danh sách 8 thẻ", 8, msg.allToolActions.size)
+        assertTrue("Không bị giới hạn ở 6 thẻ", msg.allToolActions.size > 6)
+    }
 }
