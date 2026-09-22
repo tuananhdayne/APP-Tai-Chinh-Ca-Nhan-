@@ -133,6 +133,7 @@ fun ChatAssistantScreen(
                     putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, "vi-VN")
                     putExtra(RecognizerIntent.EXTRA_PROMPT, "Nói câu thu chi của bạn (VD: Ăn phở 45k)...")
                 }
+                com.example.apptaichinh.utils.SoundUtils.playMicOpenSound()
                 speechLauncher.launch(intent)
             } catch (e: ActivityNotFoundException) {
                 Toast.makeText(context, "Thiết bị chưa cài đặt nhận diện giọng nói Google", Toast.LENGTH_LONG).show()
@@ -156,6 +157,7 @@ fun ChatAssistantScreen(
                     putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, "vi-VN")
                     putExtra(RecognizerIntent.EXTRA_PROMPT, "Nói câu thu chi của bạn (VD: Ăn phở 45k)...")
                 }
+                com.example.apptaichinh.utils.SoundUtils.playMicOpenSound()
                 speechLauncher.launch(intent)
             } catch (e: ActivityNotFoundException) {
                 Toast.makeText(context, "Thiết bị chưa cài đặt nhận diện giọng nói Google", Toast.LENGTH_LONG).show()

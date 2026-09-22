@@ -154,6 +154,7 @@ fun ManualEntryScreen(
                     putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, "vi-VN")
                     putExtra(RecognizerIntent.EXTRA_PROMPT, "Nói câu chi tiêu (VD: Ăn phở 45k, Đổ xăng 80k)...")
                 }
+                com.example.apptaichinh.utils.SoundUtils.playMicOpenSound()
                 speechLauncher.launch(intent)
             } catch (e: ActivityNotFoundException) {
                 Toast.makeText(context, "Thiết bị chưa cài đặt nhận diện giọng nói Google", Toast.LENGTH_LONG).show()
@@ -177,6 +178,7 @@ fun ManualEntryScreen(
                     putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, "vi-VN")
                     putExtra(RecognizerIntent.EXTRA_PROMPT, "Nói câu chi tiêu (VD: Ăn phở 45k, Đổ xăng 80k)...")
                 }
+                com.example.apptaichinh.utils.SoundUtils.playMicOpenSound()
                 speechLauncher.launch(intent)
             } catch (e: ActivityNotFoundException) {
                 Toast.makeText(context, "Thiết bị chưa cài đặt nhận diện giọng nói Google", Toast.LENGTH_LONG).show()
