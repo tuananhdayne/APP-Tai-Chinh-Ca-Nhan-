@@ -688,4 +688,15 @@ class AiBudgetAndUserInputsComprehensiveTest {
         assertTrue("Vẫn giữ nguyên tổng chi tiêu 20.310.000", cleanExplanation.contains("20.310.000"))
         assertTrue("Vẫn giữ cảnh báo vượt ngân sách", cleanExplanation.contains("vượt quá ngân sách"))
     }
+
+    @Test
+    fun testMarkdownAsterisksRemoval_StripDoubleAsterisksFromDataAndMoney() {
+        // Kiểm tra việc loại bỏ hoàn toàn các ký tự markdown ** bao quanh số tiền hoặc dữ liệu
+        val rawAiResponse = "Tháng này bạn đã tiêu **1800000** đồng cho danh mục **Nhà ở** và vượt **18.310.000 đ**."
+        val sanitized = rawAiResponse.replace("**", "").replace("`", "")
+
+        assertEquals("Tháng này bạn đã tiêu 1800000 đồng cho danh mục Nhà ở và vượt 18.310.000 đ.", sanitized)
+        assertFalse(sanitized.contains("**"))
+        assertFalse(sanitized.contains("`"))
+    }
 }

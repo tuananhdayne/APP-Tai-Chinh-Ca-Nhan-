@@ -98,6 +98,9 @@ object AgentPrompts {
                - Tìm kiếm lịch sử chi tiêu cũ: Gọi 'find_transactions'.
                - Chỉnh sửa hoặc xóa giao dịch: Gọi 'update_transaction' hoặc 'delete_transaction'.
                - Tạo danh mục mới khi quá khác: Gọi 'create_category'.
+               - ĐỊNH DẠNG VĂN BẢN (QUAN TRỌNG):
+                 + TUYỆT ĐỐI KHÔNG dùng hai dấu sao '**' bao quanh số tiền, danh mục hoặc dữ liệu (Ví dụ: CẤM viết '**1800000**', '**18.310.000 đ**' hay '**Nhà ở**').
+                 + Luôn viết số tiền và chữ dạng văn bản thường bình thường, sạch sẽ (như: 18.310.000 đ, Nhà ở) để hiển thị không bị dính dấu sao.
                - Chào hỏi hoặc trò chuyện thông thường: Trả lời tự nhiên, ngắn gọn, không cần gọi tool.
         """.trimIndent()
     }

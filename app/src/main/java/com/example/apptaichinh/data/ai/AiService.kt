@@ -274,6 +274,12 @@ class AiService(private val dbHelper: FinanceDatabaseHelper) {
                             .replace(Regex(",?\\s*còn thiếu\\s+[0-9.,]+(đ| đồng| ₫)?", RegexOption.IGNORE_CASE), "")
                     }
                 }
+                // Khử sạch dấu markdown in đậm '**' hoặc '`' quanh số tiền và dữ liệu (VD: **1800000** -> 1800000)
+                cleanExplanation = cleanExplanation
+                    .replace("**", "")
+                    .replace("`", "")
+                    .replace("###", "")
+                    .replace("##", "")
                 cleanExplanation
             } else {
                 "Xin chào! Mình đã tiếp nhận thông tin của bạn."

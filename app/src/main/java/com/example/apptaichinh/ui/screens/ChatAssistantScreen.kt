@@ -402,7 +402,7 @@ fun ChatMessageItem(
                             .padding(horizontal = 14.dp, vertical = 10.dp)
                     ) {
                         Text(
-                            text = message.text,
+                            text = message.text.replace("**", "").replace("`", ""),
                             style = MaterialTheme.typography.bodyMedium,
                             color = if (message.isErrorMessage) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
                         )
