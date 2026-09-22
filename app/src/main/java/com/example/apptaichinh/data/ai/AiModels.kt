@@ -60,7 +60,7 @@ data class ChatMessage(
     val text: String,
     val timestamp: Long = System.currentTimeMillis(),
     val toolAction: ToolAction? = null,
-    val toolActions: List<ToolAction> = emptyList(), // Hỗ trợ danh sách tối đa 6 action
+    val toolActions: List<ToolAction> = emptyList(), // Hỗ trợ danh sách tối đa 10 action
     val cardStatus: CardStatus = CardStatus.PENDING,
     val isErrorMessage: Boolean = false
 ) {

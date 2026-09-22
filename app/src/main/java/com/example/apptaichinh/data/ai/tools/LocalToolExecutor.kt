@@ -427,7 +427,8 @@ class LocalToolExecutor(private val dbHelper: FinanceDatabaseHelper) {
                             "chung cư", "rác", "sửa nhà", "nội thất", "gas", "nước sinh hoạt", "tiền internet", "phí dịch vụ",
                             "thuê nhà", "thuê phòng", "tiền rác", "phí chung cư", "điện nước", "vnpt", "fpt", "viettel",
                             "thợ sửa", "thợ", "sửa chữa", "đường ống", "ống nước", "vòi sen", "bình gas", "bóng đèn", "đèn led",
-                            "cước", "tiền cước", "cước điện thoại", "nạp điện thoại", "tiền điện thoại", "nạp thẻ điện thoại"
+                            "cước", "tiền cước", "cước điện thoại", "nạp điện thoại", "tiền điện thoại", "nạp thẻ điện thoại",
+                            "thuê trọ", "tiền thuê trọ", "phí thuê nhà", "trả tiền thuê", "tiền phòng trọ", "nhà trọ", "phòng trọ sinh viên"
                         ),
                         "Mua sắm" to listOf(
                             "mua sắm", "shopping", "quần áo", "áo", "quần", "giày", "dép", "shopee", "tiki", "lazada",
