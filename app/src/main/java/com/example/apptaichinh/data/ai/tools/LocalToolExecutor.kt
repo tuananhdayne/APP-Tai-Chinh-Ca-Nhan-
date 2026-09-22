@@ -502,6 +502,20 @@ class LocalToolExecutor(private val dbHelper: FinanceDatabaseHelper) {
                 return standaloneMatch.groupValues[1].toLongOrNull()
             }
 
+            // 9. Dạng số nguyên < 1000 đứng sau các từ khóa chỉ chi phí (vd: hết 100, mất 50) (hiểu ngầm là nghìn)
+            val implicitKRegex = Regex("""(?:\b(?:hết|mất|tốn|thu|nhận|được|giá|chi|khoảng)\s+)(\d{1,3})\b""")
+            val implicitMatch = implicitKRegex.find(cleanText)
+            if (implicitMatch != null) {
+                return (implicitMatch.groupValues[1].toLongOrNull() ?: 0L) * 1_000L
+            }
+
+            // 10. Dạng số nguyên < 1000 đứng ở cuối câu (vd: đổ xăng 50) (hiểu ngầm là nghìn)
+            val endNumberRegex = Regex("""\b(\d{1,3})\s*$""")
+            val endMatch = endNumberRegex.find(cleanText)
+            if (endMatch != null) {
+                return (endMatch.groupValues[1].toLongOrNull() ?: 0L) * 1_000L
+            }
+
             return null
         }
 
