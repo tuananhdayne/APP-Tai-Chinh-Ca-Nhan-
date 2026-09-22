@@ -328,6 +328,12 @@ class AiService(private val dbHelper: FinanceDatabaseHelper) {
                         ToolActionType.DELETE -> {
                             "Đã soạn phiếu xóa giao dịch. Bạn hãy nhấn 'Xác Nhận Xóa' bên dưới nếu muốn xóa bỏ khoản này nhé!"
                         }
+                        ToolActionType.UPDATE_CATEGORY -> {
+                            "Đã soạn phiếu sửa danh mục. Bạn hãy kiểm tra thông tin và nhấn 'Xác Nhận Sửa' nhé!"
+                        }
+                        ToolActionType.DELETE_CATEGORY -> {
+                            "Đã soạn phiếu xóa danh mục. Lưu ý việc này có thể ảnh hưởng đến các giao dịch cũ. Nhấn 'Xác Nhận Xóa' nếu bạn chắc chắn."
+                        }
                         else -> {
                             val typeName = if (action.transactionType == "INCOME") "Thu nhập" else "Chi tiêu"
                             val amountStr = com.example.apptaichinh.ui.components.Formatters.formatVnd(action.amount)
@@ -501,6 +507,37 @@ class AiService(private val dbHelper: FinanceDatabaseHelper) {
                     categoryColorHex = defaultColor,
                     categoryBudget = budget,
                     note = "Tạo danh mục $catName"
+                )
+            }
+
+            "update_category" -> {
+                val searchKeyword = args.optString("search_keyword", "")
+                val newName = args.optString("new_name", "").trim()
+                val newIcon = args.optString("new_icon", "").trim()
+
+                val targetCat = categories.find { it.name.equals(searchKeyword, ignoreCase = true) }
+                    ?: categories.find { it.name.contains(searchKeyword, ignoreCase = true) }
+
+                ToolAction(
+                    type = ToolActionType.UPDATE_CATEGORY,
+                    newCategory = targetCat,
+                    categoryName = newName,
+                    categoryIcon = newIcon,
+                    searchKeyword = searchKeyword,
+                    note = "Sửa danh mục ${targetCat?.name ?: searchKeyword}"
+                )
+            }
+
+            "delete_category" -> {
+                val searchKeyword = args.optString("search_keyword", "")
+                val targetCat = categories.find { it.name.equals(searchKeyword, ignoreCase = true) }
+                    ?: categories.find { it.name.contains(searchKeyword, ignoreCase = true) }
+
+                ToolAction(
+                    type = ToolActionType.DELETE_CATEGORY,
+                    newCategory = targetCat,
+                    searchKeyword = searchKeyword,
+                    note = "Xóa danh mục ${targetCat?.name ?: searchKeyword}"
                 )
             }
 

@@ -138,6 +138,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                         ToolActionType.UPDATE -> "Mình tìm thấy giao dịch cần sửa. Bạn hãy kiểm tra thông tin thay đổi bên dưới:"
                                         ToolActionType.DELETE -> "Cảnh báo: Bạn có chắc chắn muốn xóa giao dịch sau không?"
                                         ToolActionType.CREATE_CATEGORY -> "Mình đã chuẩn bị đề xuất tạo danh mục mới. Bạn hãy kiểm tra và xác nhận nhé!"
+                                        ToolActionType.UPDATE_CATEGORY -> "Mình đã chuẩn bị thẻ sửa danh mục. Bạn hãy kiểm tra và xác nhận nhé!"
+                                        ToolActionType.DELETE_CATEGORY -> "Cảnh báo: Bạn có chắc chắn muốn xóa danh mục này không?"
                                         ToolActionType.SET_OVERALL_BUDGET -> "Mình sẽ đặt lại ngân sách tổng tháng. Bạn hãy xác nhận bên dưới nhé!"
                                         ToolActionType.SET_CATEGORY_BUDGET -> "Mình sẽ cập nhật hạn mức ngân sách cho danh mục. Bạn hãy xác nhận bên dưới nhé!"
                                         ToolActionType.TRANSFER_CATEGORY -> "Mình tìm thấy giao dịch cần chuyển danh mục. Bạn hãy xem và xác nhận bên dưới!"
@@ -252,6 +254,22 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                         )
                         repository.addCategory(newCat)
                         confirmedSummaries.add("Tạo danh mục: ${action.categoryIcon} ${action.categoryName}")
+                    }
+
+                    ToolActionType.UPDATE_CATEGORY -> {
+                        val oldCat = action.newCategory ?: continue
+                        val updatedCat = oldCat.copy(
+                            name = if (action.categoryName.isNotBlank()) action.categoryName else oldCat.name,
+                            icon = if (action.categoryIcon.isNotBlank()) action.categoryIcon else oldCat.icon
+                        )
+                        repository.updateCategory(updatedCat)
+                        confirmedSummaries.add("Sửa danh mục: ${updatedCat.icon} ${updatedCat.name}")
+                    }
+
+                    ToolActionType.DELETE_CATEGORY -> {
+                        val targetCat = action.newCategory ?: continue
+                        repository.deleteCategory(targetCat.id)
+                        confirmedSummaries.add("Xóa danh mục: ${targetCat.icon} ${targetCat.name}")
                     }
 
                     ToolActionType.SET_OVERALL_BUDGET -> {

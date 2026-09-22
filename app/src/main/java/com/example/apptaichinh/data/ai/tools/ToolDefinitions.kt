@@ -4,7 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Quản lý định nghĩa JSON Schemas cho toàn bộ các Tools (Function Calling) theo chuẩn OpenAI.
+ * Quản lý định nghĩa JSON Schemas cho toàn bộ 16 Tools (Function Calling) theo chuẩn OpenAI.
  * Tách biệt hoàn toàn thành một file chuyên biệt dễ bảo trì và mở rộng.
  */
 object ToolDefinitions {
@@ -16,23 +16,21 @@ object ToolDefinitions {
         // NHÓM 1: CÔNG CỤ TRUY VẤN DỮ LIỆU NỘI BỘ (QUERY TOOLS)
         // ==========================================
 
-        // 1. query_balance_summary: Tra cứu tổng thu, tổng chi, số dư & ngân sách tổng
         tools.put(createTool(
             name = "query_balance_summary",
-            description = "Tra cứu số dư hiện tại, tổng thu nhập, tổng chi tiêu và ngân sách tổng thể của tháng",
+            description = "Tra cứu tổng thu nhập, tổng chi tiêu, số dư và ngân sách tổng thể của một tháng bất kỳ. Dùng khi người dùng hỏi về tổng quan tài chính (vd: 'tháng này tiêu bao nhiêu', 'số dư còn bao nhiêu').",
             properties = JSONObject().apply {
                 put("month_offset", JSONObject().apply {
                     put("type", "integer")
-                    put("description", "0 là tháng hiện tại, -1 là tháng trước, 1 là tháng sau (mặc định 0)")
+                    put("description", "0 = tháng hiện tại, -1 = tháng trước, 1 = tháng sau (mặc định 0)")
                 })
             },
             required = emptyList()
         ))
 
-        // 2. query_category_budget: Tra cứu tình hình ngân sách của danh mục (đã chi, hạn mức, còn lại)
         tools.put(createTool(
             name = "query_category_budget",
-            description = "Tra cứu hạn mức ngân sách, số tiền đã chi tiêu và số tiền còn lại của một danh mục cụ thể (hoặc toàn bộ danh mục nếu để trống)",
+            description = "Tra cứu hạn mức ngân sách, số tiền đã chi tiêu và số tiền còn lại của một danh mục cụ thể hoặc toàn bộ danh mục. Dùng khi hỏi 'danh mục Ăn uống còn bao nhiêu tiền' hoặc 'đã vượt hạn mức chưa'.",
             properties = JSONObject().apply {
                 put("category_name", JSONObject().apply {
                     put("type", "string")
@@ -40,16 +38,15 @@ object ToolDefinitions {
                 })
                 put("month_offset", JSONObject().apply {
                     put("type", "integer")
-                    put("description", "0 là tháng hiện tại, -1 là tháng trước, 1 là tháng sau (mặc định 0)")
+                    put("description", "0 = tháng hiện tại, -1 = tháng trước (mặc định 0)")
                 })
             },
             required = emptyList()
         ))
 
-        // 3. find_transactions: Tìm kiếm các giao dịch gần đây trong sổ
         tools.put(createTool(
             name = "find_transactions",
-            description = "Tìm kiếm các khoản giao dịch gần nhất theo từ khóa ghi chú, tên danh mục hoặc phân loại Thu/Chi",
+            description = "Tìm kiếm các giao dịch gần đây trong lịch sử. Dùng khi người dùng muốn tra cứu giao dịch cũ (vd: 'tìm các khoản ăn phở', 'khoản tiền điện tháng trước').",
             properties = JSONObject().apply {
                 put("keyword", JSONObject().apply {
                     put("type", "string")
@@ -58,144 +55,36 @@ object ToolDefinitions {
                 put("type", JSONObject().apply {
                     put("type", "string")
                     put("enum", JSONArray().put("ALL").put("EXPENSE").put("INCOME"))
-                    put("description", "Phân loại: ALL (tất cả), EXPENSE (chi tiêu), INCOME (thu nhập)")
+                    put("description", "Phân loại giao dịch cần tìm: ALL, EXPENSE, hoặc INCOME")
                 })
                 put("limit", JSONObject().apply {
                     put("type", "integer")
-                    put("description", "Số lượng giao dịch tối đa cần lấy (mặc định 5)")
+                    put("description", "Số lượng kết quả trả về tối đa (mặc định 5)")
                 })
             },
             required = emptyList()
         ))
 
-        // 4. query_categories: Tra cứu và đối chiếu toàn văn câu nói của người dùng với các danh mục có sẵn
         tools.put(createTool(
             name = "query_categories",
-            description = "Tra cứu và đối chiếu toàn văn câu nói của người dùng với các danh mục có sẵn của bên Thu (INCOME) hoặc bên Chi (EXPENSE) để chọn danh mục phù hợp nhất.",
+            description = "Tra cứu và đối chiếu câu nói của người dùng với danh sách danh mục có sẵn trong Database để chọn ra danh mục chuẩn xác nhất (Tránh ảo giác tạo danh mục trùng lặp). BẮT BUỘC gọi tool này trước khi gọi 'create_transaction'.",
             properties = JSONObject().apply {
                 put("type", JSONObject().apply {
                     put("type", "string")
                     put("enum", JSONArray().put("EXPENSE").put("INCOME"))
-                    put("description", "Bắt buộc: 'EXPENSE' cho chi tiêu hoặc 'INCOME' cho thu nhập")
+                    put("description", "EXPENSE (chi tiêu) hoặc INCOME (thu nhập)")
                 })
                 put("user_text", JSONObject().apply {
                     put("type", "string")
-                    put("description", "Toàn bộ câu nói hoặc mô tả của người dùng (VD: 'Ăn bát phở bò 45k', 'Vừa nhận lương công ty 15 triệu') để đối chiếu với các danh mục")
+                    put("description", "Nguyên văn câu nói hoặc mô tả chi tiết của người dùng để hệ thống đối chiếu ngữ nghĩa (VD: 'ăn bát phở 45k')")
                 })
             },
             required = listOf("type", "user_text")
         ))
 
-        // ==========================================
-        // NHÓM 2: CÔNG CỤ ĐỀ XUẤT HÀNH ĐỘNG (ACTION TOOLS - CẦN PREVIEW CARD)
-        // ==========================================
-
-        // 4. create_transaction: Soạn phiếu thêm mới thu/chi
-        tools.put(createTool(
-            name = "create_transaction",
-            description = "Soạn phiếu ghi chép một khoản chi tiêu hoặc thu nhập mới vào sổ tài chính",
-            properties = JSONObject().apply {
-                put("amount", JSONObject().apply {
-                    put("type", "integer")
-                    put("description", "Số tiền bằng số nguyên VNĐ (VD: 45000, 2000000)")
-                })
-                put("type", JSONObject().apply {
-                    put("type", "string")
-                    put("enum", JSONArray().put("EXPENSE").put("INCOME"))
-                    put("description", "Loại giao dịch: EXPENSE (Chi tiêu) hoặc INCOME (Thu nhập)")
-                })
-                put("category_name", JSONObject().apply {
-                    put("type", "string")
-                    put("description", "Tên danh mục phù hợp nhất trong danh sách danh mục có sẵn của app")
-                })
-                put("note", JSONObject().apply {
-                    put("type", "string")
-                    put("description", "Ghi chú tóm tắt nội dung ngắn gọn 2-4 từ (VD: Ăn phở bò, Đổ xăng xe). CẤM sao chép nguyên cả câu nói dài của người dùng.")
-                })
-            },
-            required = listOf("amount", "type", "category_name", "note")
-        ))
-
-        // 5. update_transaction: Soạn phiếu sửa đổi giao dịch
-        tools.put(createTool(
-            name = "update_transaction",
-            description = "Soạn phiếu chỉnh sửa số tiền, danh mục hoặc ghi chú của một giao dịch đã ghi chép",
-            properties = JSONObject().apply {
-                put("search_keyword", JSONObject().apply {
-                    put("type", "string")
-                    put("description", "Từ khóa để tìm giao dịch cần sửa (VD: 'ăn phở', 'xăng')")
-                })
-                put("old_amount", JSONObject().apply {
-                    put("type", "integer")
-                    put("description", "Số tiền cũ nếu người dùng có nhắc đến (VD: 45000)")
-                })
-                put("new_amount", JSONObject().apply {
-                    put("type", "integer")
-                    put("description", "Số tiền mới cần sửa thành (VD: 50000)")
-                })
-                put("new_category_name", JSONObject().apply {
-                    put("type", "string")
-                    put("description", "Tên danh mục mới nếu cần đổi danh mục")
-                })
-                put("new_note", JSONObject().apply {
-                    put("type", "string")
-                    put("description", "Ghi chú mới nếu người dùng muốn đổi ghi chú")
-                })
-            },
-            required = listOf("search_keyword")
-        ))
-
-        // 6. delete_transaction: Soạn phiếu xóa giao dịch
-        tools.put(createTool(
-            name = "delete_transaction",
-            description = "Soạn phiếu xóa bỏ một giao dịch đã ghi chép trong sổ",
-            properties = JSONObject().apply {
-                put("search_keyword", JSONObject().apply {
-                    put("type", "string")
-                    put("description", "Từ khóa để tìm kiếm giao dịch cần xóa (VD: 'ăn phở', 'xăng', 'tiền điện')")
-                })
-                put("amount", JSONObject().apply {
-                    put("type", "integer")
-                    put("description", "Số tiền của giao dịch cần xóa nếu có nhắc đến (VD: 45000)")
-                })
-            },
-            required = listOf("search_keyword")
-        ))
-
-        // 7. create_category: Soạn phiếu tạo danh mục mới khi quá khác biệt hoặc người dùng yêu cầu
-        tools.put(createTool(
-            name = "create_category",
-            description = "Soạn phiếu tạo một danh mục Thu hoặc Chi mới khi người dùng yêu cầu hoặc khi khoản chi tiêu/thu nhập hoàn toàn mới lạ, quá khác biệt với mọi danh mục hiện có",
-            properties = JSONObject().apply {
-                put("name", JSONObject().apply {
-                    put("type", "string")
-                    put("description", "Tên danh mục mới (VD: 'Nuôi thú cưng', 'Làm đẹp', 'Từ thiện', 'Tiền tiêu vặt')")
-                })
-                put("type", JSONObject().apply {
-                    put("type", "string")
-                    put("enum", JSONArray().put("EXPENSE").put("INCOME"))
-                    put("description", "Loại danh mục: EXPENSE (Chi tiêu) hoặc INCOME (Thu nhập)")
-                })
-                put("icon", JSONObject().apply {
-                    put("type", "string")
-                    put("description", "Emoji biểu tượng đại diện phù hợp (VD: '🐱', '💅', '🎗️', '👶', '🏋️')")
-                })
-                put("budget", JSONObject().apply {
-                    put("type", "integer")
-                    put("description", "Hạn mức ngân sách dự kiến hàng tháng bằng VNĐ nếu có (mặc định 0)")
-                })
-            },
-            required = listOf("name", "type", "icon")
-        ))
-
-        // ==========================================
-        // NHÓM 3: QUERY TOOLS MỞ RỘNG (ANALYTICS & TRENDS)
-        // ==========================================
-
-        // 8. query_daily_summary: Tổng kết thu chi trong ngày hôm nay
         tools.put(createTool(
             name = "query_daily_summary",
-            description = "Tra cứu tổng thu nhập, tổng chi tiêu và số dư chỉ tính trong ngày hôm nay. Dùng khi người dùng hỏi 'hôm nay tôi tiêu bao nhiêu', 'hôm nay thu chi thế nào'.",
+            description = "Tra cứu tổng thu chi và số dư chỉ tính trong 1 ngày cụ thể. Dùng khi người dùng hỏi 'hôm nay tôi tiêu bao nhiêu', 'hôm qua tiêu gì'.",
             properties = JSONObject().apply {
                 put("date_offset", JSONObject().apply {
                     put("type", "integer")
@@ -205,14 +94,13 @@ object ToolDefinitions {
             required = emptyList()
         ))
 
-        // 9. query_top_expenses: Top N khoản chi lớn nhất
         tools.put(createTool(
             name = "query_top_expenses",
-            description = "Lấy danh sách N khoản chi tiêu lớn nhất trong tháng hoặc tuần, sắp xếp từ cao đến thấp. Dùng khi người dùng hỏi 'tôi tiêu nhiều nhất vào đâu', 'khoản nào lớn nhất tháng này'.",
+            description = "Lấy danh sách các khoản chi tiêu lớn nhất trong tháng hoặc tuần. Dùng khi hỏi 'tôi tiêu nhiều nhất vào đâu', 'khoản nào tốn nhất'.",
             properties = JSONObject().apply {
                 put("limit", JSONObject().apply {
                     put("type", "integer")
-                    put("description", "Số khoản chi muốn xem (mặc định 5, tối đa 10)")
+                    put("description", "Số lượng khoản chi muốn xem (mặc định 5, tối đa 10)")
                 })
                 put("month_offset", JSONObject().apply {
                     put("type", "integer")
@@ -222,69 +110,199 @@ object ToolDefinitions {
             required = emptyList()
         ))
 
-        // 10. query_spending_trend: So sánh xu hướng chi tiêu tháng này vs tháng trước
         tools.put(createTool(
             name = "query_spending_trend",
-            description = "Phân tích xu hướng chi tiêu: so sánh tổng chi tháng hiện tại với tháng trước, tháng nào chi nhiều hơn, tăng/giảm bao nhiêu phần trăm và danh mục nào thay đổi nhiều nhất.",
+            description = "Phân tích xu hướng chi tiêu so với tháng trước (Tăng/Giảm bao nhiêu, thay đổi ở danh mục nào). Dùng khi hỏi 'tháng này tiêu nhiều hơn tháng trước không'.",
             properties = JSONObject().apply {
                 put("compare_months", JSONObject().apply {
                     put("type", "integer")
-                    put("description", "Số tháng cần so sánh lùi về (mặc định 1 = so với tháng trước)")
+                    put("description", "Số tháng lùi về để so sánh (mặc định 1 = so với tháng trước)")
                 })
             },
             required = emptyList()
         ))
 
         // ==========================================
-        // NHÓM 4: ACTION TOOLS MỞ RỘNG (BUDGET MANAGEMENT)
+        // NHÓM 2: CÔNG CỤ QUẢN LÝ GIAO DỊCH (TRANSACTION ACTION TOOLS)
         // ==========================================
 
-        // 11. set_overall_budget: Đặt hạn mức ngân sách tổng tháng
         tools.put(createTool(
-            name = "set_overall_budget",
-            description = "Soạn phiếu đặt hoặc thay đổi hạn mức ngân sách chi tiêu tổng thể cho tháng. Dùng khi người dùng nói 'đặt ngân sách tháng này là X triệu', 'sửa hạn mức thành X'.",
+            name = "create_transaction",
+            description = "Soạn thẻ Xem Trước (Preview Card) để ghi nhận một giao dịch Thu/Chi mới. BẮT BUỘC gọi 'query_categories' trước khi gọi tool này để lấy tên danh mục chuẩn xác.",
             properties = JSONObject().apply {
                 put("amount", JSONObject().apply {
                     put("type", "integer")
-                    put("description", "Hạn mức ngân sách tổng mới bằng VNĐ (VD: 10000000 cho 10 triệu)")
+                    put("description", "Số tiền (bắt buộc phải quy đổi ra số nguyên VNĐ, vd: 1 triệu = 1000000)")
+                })
+                put("type", JSONObject().apply {
+                    put("type", "string")
+                    put("enum", JSONArray().put("EXPENSE").put("INCOME"))
+                    put("description", "Loại: EXPENSE (Chi tiêu) hoặc INCOME (Thu nhập)")
+                })
+                put("category_name", JSONObject().apply {
+                    put("type", "string")
+                    put("description", "Tên danh mục do 'query_categories' trả về")
+                })
+                put("note", JSONObject().apply {
+                    put("type", "string")
+                    put("description", "Ghi chú siêu ngắn (2-4 từ, vd: 'Ăn phở', 'Đổ xăng'). CẤM sao chép nguyên cả câu dài.")
+                })
+            },
+            required = listOf("amount", "type", "category_name", "note")
+        ))
+
+        tools.put(createTool(
+            name = "update_transaction",
+            description = "Soạn thẻ Xem Trước để sửa chữa giao dịch đã tồn tại. Dùng khi người dùng yêu cầu sửa số tiền, đổi danh mục hoặc đổi ghi chú của 1 giao dịch vừa tạo hoặc trong quá khứ.",
+            properties = JSONObject().apply {
+                put("search_keyword", JSONObject().apply {
+                    put("type", "string")
+                    put("description", "Từ khóa tìm kiếm giao dịch cũ cần sửa (VD: 'ăn phở', 'xăng')")
+                })
+                put("old_amount", JSONObject().apply {
+                    put("type", "integer")
+                    put("description", "Số tiền cũ nếu có nhắc đến (giúp tìm kiếm chính xác hơn)")
+                })
+                put("new_amount", JSONObject().apply {
+                    put("type", "integer")
+                    put("description", "Số tiền mới cần cập nhật (nếu không đổi thì không truyền)")
+                })
+                put("new_category_name", JSONObject().apply {
+                    put("type", "string")
+                    put("description", "Tên danh mục mới cần cập nhật (nếu không đổi thì không truyền)")
+                })
+                put("new_note", JSONObject().apply {
+                    put("type", "string")
+                    put("description", "Ghi chú mới cần cập nhật (nếu không đổi thì không truyền)")
+                })
+            },
+            required = listOf("search_keyword")
+        ))
+
+        tools.put(createTool(
+            name = "delete_transaction",
+            description = "Soạn thẻ Xem Trước để xóa bỏ một giao dịch đã tồn tại. Dùng khi người dùng bảo 'xóa khoản phở đi', 'hủy khoản xăng hôm qua'.",
+            properties = JSONObject().apply {
+                put("search_keyword", JSONObject().apply {
+                    put("type", "string")
+                    put("description", "Từ khóa để tìm kiếm giao dịch cần xóa (VD: 'ăn phở', 'xăng')")
+                })
+                put("amount", JSONObject().apply {
+                    put("type", "integer")
+                    put("description", "Số tiền của khoản cần xóa (nếu có)")
+                })
+            },
+            required = listOf("search_keyword")
+        ))
+
+        // ==========================================
+        // NHÓM 3: CÔNG CỤ QUẢN LÝ DANH MỤC (CATEGORY ACTION TOOLS)
+        // ==========================================
+
+        tools.put(createTool(
+            name = "create_category",
+            description = "Soạn thẻ Xem Trước để tạo một danh mục hoàn toàn mới. CHỈ SỬ DỤNG khi khoản thu/chi thực sự quá khác biệt và hệ thống chưa có danh mục nào phù hợp, HOẶC người dùng yêu cầu rõ ràng.",
+            properties = JSONObject().apply {
+                put("name", JSONObject().apply {
+                    put("type", "string")
+                    put("description", "Tên danh mục mới (VD: 'Nuôi mèo', 'Từ thiện', 'Tiền tiêu vặt')")
+                })
+                put("type", JSONObject().apply {
+                    put("type", "string")
+                    put("enum", JSONArray().put("EXPENSE").put("INCOME"))
+                    put("description", "EXPENSE hoặc INCOME")
+                })
+                put("icon", JSONObject().apply {
+                    put("type", "string")
+                    put("description", "Emoji phù hợp đại diện cho danh mục (VD: '🐱', '🎗️', '💰')")
+                })
+                put("budget", JSONObject().apply {
+                    put("type", "integer")
+                    put("description", "Hạn mức ngân sách nếu có (mặc định 0)")
+                })
+            },
+            required = listOf("name", "type", "icon")
+        ))
+
+        tools.put(createTool(
+            name = "update_category",
+            description = "Soạn thẻ Xem Trước để sửa tên hoặc biểu tượng (icon) của một danh mục ĐÃ CÓ. Dùng khi người dùng muốn 'đổi tên danh mục X thành Y' hoặc 'đổi icon danh mục X'.",
+            properties = JSONObject().apply {
+                put("search_keyword", JSONObject().apply {
+                    put("type", "string")
+                    put("description", "Tên danh mục hiện tại cần sửa (VD: 'Ăn uống')")
+                })
+                put("new_name", JSONObject().apply {
+                    put("type", "string")
+                    put("description", "Tên mới (nếu muốn đổi tên)")
+                })
+                put("new_icon", JSONObject().apply {
+                    put("type", "string")
+                    put("description", "Emoji biểu tượng mới (nếu muốn đổi icon)")
+                })
+            },
+            required = listOf("search_keyword")
+        ))
+
+        tools.put(createTool(
+            name = "delete_category",
+            description = "Soạn thẻ Xem Trước để xóa một danh mục ĐÃ CÓ. Chỉ gọi khi người dùng yêu cầu rõ ràng (vd: 'xóa danh mục Nuôi mèo đi').",
+            properties = JSONObject().apply {
+                put("search_keyword", JSONObject().apply {
+                    put("type", "string")
+                    put("description", "Tên danh mục cần xóa (VD: 'Nuôi mèo', 'Ăn vặt')")
+                })
+            },
+            required = listOf("search_keyword")
+        ))
+
+        // ==========================================
+        // NHÓM 4: CÔNG CỤ QUẢN LÝ NGÂN SÁCH (BUDGET ACTION TOOLS)
+        // ==========================================
+
+        tools.put(createTool(
+            name = "set_overall_budget",
+            description = "Soạn thẻ Xem Trước để thiết lập ngân sách tổng thể của tháng. Dùng khi người dùng bảo 'tháng này giới hạn chi tiêu 10 triệu', 'đặt ngân sách tổng 20tr'.",
+            properties = JSONObject().apply {
+                put("amount", JSONObject().apply {
+                    put("type", "integer")
+                    put("description", "Hạn mức tổng mới bằng VNĐ (VD: 10 triệu -> 10000000)")
                 })
             },
             required = listOf("amount")
         ))
 
-        // 12. set_category_budget: Đặt hạn mức ngân sách danh mục
         tools.put(createTool(
             name = "set_category_budget",
-            description = "Soạn phiếu đặt hoặc thay đổi hạn mức ngân sách cho một danh mục chi tiêu cụ thể. Dùng khi người dùng nói 'đặt hạn mức Ăn uống thành 3 triệu', 'giới hạn Mua sắm X đồng'.",
+            description = "Soạn thẻ Xem Trước để thiết lập ngân sách cho một danh mục cụ thể. Dùng khi nói 'đặt hạn mức Ăn uống 3 triệu', 'giới hạn mua sắm 500k'.",
             properties = JSONObject().apply {
                 put("category_name", JSONObject().apply {
                     put("type", "string")
-                    put("description", "Tên danh mục cần đặt hạn mức (VD: 'Ăn uống', 'Đi lại', 'Mua sắm')")
+                    put("description", "Tên danh mục cần áp dụng hạn mức (VD: 'Ăn uống', 'Mua sắm')")
                 })
                 put("amount", JSONObject().apply {
                     put("type", "integer")
-                    put("description", "Hạn mức ngân sách mới bằng VNĐ (VD: 3000000 cho 3 triệu)")
+                    put("description", "Hạn mức mới bằng VNĐ (VD: 3 triệu -> 3000000)")
                 })
             },
             required = listOf("category_name", "amount")
         ))
 
-        // 13. transfer_category: Chuyển giao dịch sang danh mục khác
         tools.put(createTool(
             name = "transfer_category",
-            description = "Soạn phiếu chuyển một giao dịch đã ghi chép từ danh mục hiện tại sang một danh mục khác. Dùng khi người dùng nói 'chuyển khoản X sang danh mục Y', 'khoản phở hôm qua bỏ vào Ăn uống đi'.",
+            description = "Soạn thẻ Xem Trước để luân chuyển/chuyển đổi một giao dịch từ danh mục này sang danh mục khác. Dùng khi nói 'chuyển khoản phở vào danh mục giải trí'.",
             properties = JSONObject().apply {
                 put("search_keyword", JSONObject().apply {
                     put("type", "string")
-                    put("description", "Từ khóa để tìm giao dịch cần chuyển (VD: 'phở hôm qua', 'xăng tuần trước')")
+                    put("description", "Từ khóa tìm khoản giao dịch cần chuyển (VD: 'phở')")
                 })
                 put("target_category_name", JSONObject().apply {
                     put("type", "string")
-                    put("description", "Tên danh mục đích muốn chuyển vào (VD: 'Ăn uống', 'Giải trí')")
+                    put("description", "Tên danh mục ĐÍCH mà giao dịch sẽ được chuyển tới (VD: 'Giải trí')")
                 })
                 put("amount", JSONObject().apply {
                     put("type", "integer")
-                    put("description", "Số tiền của giao dịch cần chuyển nếu có nhắc đến (để thu hẹp tìm kiếm)")
+                    put("description", "Số tiền của giao dịch (nếu có)")
                 })
             },
             required = listOf("search_keyword", "target_category_name")
@@ -292,7 +310,6 @@ object ToolDefinitions {
 
         return tools
     }
-
 
     private fun createTool(
         name: String,

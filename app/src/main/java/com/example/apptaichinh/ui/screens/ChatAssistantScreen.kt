@@ -610,8 +610,16 @@ fun ChatMessageItem(
                                         onCancel = { onCancelAction(index) }
                                     )
                                 }
+                                else -> {
+                                    // Fallback UI cho UPDATE_CATEGORY và DELETE_CATEGORY
+                                    GenericActionCard(
+                                        action = action,
+                                        cardStatus = currentCardStatus,
+                                        onConfirm = { onConfirmAction(index) },
+                                        onCancel = { onCancelAction(index) }
+                                    )
+                                }
                             }
-
                         }
                     }
                 }
@@ -1858,4 +1866,47 @@ fun AiServerConfigDialog(
             }
         }
     )
+}
+
+@Composable
+fun GenericActionCard(
+    action: com.example.apptaichinh.data.ai.ToolAction,
+    cardStatus: com.example.apptaichinh.data.ai.CardStatus,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                text = action.note.ifBlank { "Xác nhận thao tác" },
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (cardStatus == com.example.apptaichinh.data.ai.CardStatus.PENDING) {
+                    OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) {
+                        Text("Hủy")
+                    }
+                    Button(onClick = onConfirm, modifier = Modifier.weight(1f)) {
+                        Text("Xác Nhận")
+                    }
+                } else {
+                    Text(
+                        text = if (cardStatus == com.example.apptaichinh.data.ai.CardStatus.CONFIRMED) "Đã xác nhận" else "Đã hủy",
+                        color = if (cardStatus == com.example.apptaichinh.data.ai.CardStatus.CONFIRMED) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(8.dp)
+                    )
+                }
+            }
+        }
+    }
 }

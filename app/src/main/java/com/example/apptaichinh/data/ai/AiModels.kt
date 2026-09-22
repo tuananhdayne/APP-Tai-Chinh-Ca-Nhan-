@@ -15,6 +15,8 @@ enum class ToolActionType {
     UPDATE,
     DELETE,
     CREATE_CATEGORY,
+    UPDATE_CATEGORY,         // Sửa danh mục (tên, icon)
+    DELETE_CATEGORY,         // Xóa danh mục
     SET_OVERALL_BUDGET,      // Đặt ngân sách tổng tháng
     SET_CATEGORY_BUDGET,     // Đặt hạn mức ngân sách danh mục
     TRANSFER_CATEGORY        // Chuyển giao dịch sang danh mục khác

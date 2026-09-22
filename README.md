@@ -65,17 +65,25 @@
 [4. Người dùng bấm "Xác Nhận"] ─────────────► Lưu thay đổi vào SQLite
 ```
 
-### Hệ Thống 8 Công Cụ (Function Calling Tools):
-1. **Nhóm Query Tools (Chạy ngầm cục bộ):**
+### Hệ Thống 16 Công Cụ (Function Calling Tools):
+1. **Nhóm Query Tools (7 công cụ chạy ngầm cục bộ):**
    - `query_categories`: Đối chiếu câu nói với danh mục có sẵn và trích xuất số tiền.
    - `query_balance_summary`: Tra cứu tổng thu, tổng chi, số dư và trạng thái vượt ngân sách.
    - `query_category_budget`: Tra cứu hạn mức và tỷ lệ đã chi của một danh mục cụ thể.
    - `find_transactions`: Tìm kiếm lịch sử giao dịch theo từ khóa hoặc số tiền.
-2. **Nhóm Action Tools (Hiển thị thẻ Preview Card để người dùng duyệt):**
+   - `query_daily_summary`: Thống kê tổng quan thu chi trong ngày.
+   - `query_top_expenses`: Tra cứu danh sách các khoản chi tiêu tốn kém nhất.
+   - `query_spending_trend`: Phân tích xu hướng tăng/giảm chi tiêu so với tháng trước.
+2. **Nhóm Action Tools (9 công cụ hiển thị thẻ Preview Card để người dùng duyệt):**
    - `create_transaction`: Soạn thẻ ghi chép khoản thu/chi mới.
    - `update_transaction`: Soạn thẻ cập nhật thông tin giao dịch cũ.
    - `delete_transaction`: Soạn thẻ xác nhận xóa giao dịch.
    - `create_category`: Soạn thẻ đề xuất tạo nhóm danh mục mới.
+   - `update_category`: Soạn thẻ đề xuất sửa danh mục cũ.
+   - `delete_category`: Soạn thẻ đề xuất xóa danh mục.
+   - `set_overall_budget`: Thiết lập hạn mức ngân sách tổng thể.
+   - `set_category_budget`: Thiết lập hạn mức ngân sách cho từng danh mục.
+   - `transfer_category`: Luân chuyển giao dịch sang danh mục khác.
 
 ---
 

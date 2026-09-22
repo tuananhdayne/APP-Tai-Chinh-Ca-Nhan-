@@ -13,7 +13,7 @@ class OpenAiToolSchemasTest {
     @Test
     fun testToolDefinitionsCountAndNames() {
         val tools = ToolDefinitions.getAllTools()
-        assertEquals(14, tools.length())
+        assertEquals(16, tools.length())
 
         val toolNames = mutableListOf<String>()
         for (i in 0 until tools.length()) {
@@ -32,11 +32,13 @@ class OpenAiToolSchemasTest {
         assertTrue(toolNames.contains("query_top_expenses"))
         assertTrue(toolNames.contains("query_spending_trend"))
 
-        // Action tools (7 tools)
+        // Action tools (9 tools)
         assertTrue(toolNames.contains("create_transaction"))
         assertTrue(toolNames.contains("update_transaction"))
         assertTrue(toolNames.contains("delete_transaction"))
         assertTrue(toolNames.contains("create_category"))
+        assertTrue(toolNames.contains("update_category"))
+        assertTrue(toolNames.contains("delete_category"))
         assertTrue(toolNames.contains("set_overall_budget"))
         assertTrue(toolNames.contains("set_category_budget"))
         assertTrue(toolNames.contains("transfer_category"))
