@@ -26,6 +26,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -39,6 +40,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -64,6 +66,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.apptaichinh.data.ai.CardStatus
@@ -71,6 +74,8 @@ import com.example.apptaichinh.data.ai.ChatMessage
 import com.example.apptaichinh.data.ai.MessageSender
 import com.example.apptaichinh.data.ai.ToolAction
 import com.example.apptaichinh.data.ai.ToolActionType
+import com.example.apptaichinh.data.model.Category
+import com.example.apptaichinh.ui.components.EditCategoryDialog
 import com.example.apptaichinh.ui.components.Formatters
 import com.example.apptaichinh.ui.viewmodel.FinanceViewModel
 
@@ -85,6 +90,7 @@ fun ChatAssistantScreen(
     val isThinking by viewModel.isAiThinking.collectAsState()
     val serverUrl by viewModel.aiServerUrl.collectAsState()
     val modelName by viewModel.aiModelName.collectAsState()
+    val categories by viewModel.categories.collectAsState()
 
     var inputText by remember { mutableStateOf("") }
     var showSettingsDialog by remember { mutableStateOf(false) }
@@ -183,8 +189,15 @@ fun ChatAssistantScreen(
                 items(messages, key = { it.id }) { message ->
                     ChatMessageItem(
                         message = message,
+                        categories = categories,
                         onConfirm = { viewModel.confirmToolAction(message.id) },
-                        onCancel = { viewModel.cancelToolAction(message.id) }
+                        onCancel = { viewModel.cancelToolAction(message.id) },
+                        onEditAction = { updatedAction ->
+                            viewModel.updateToolAction(message.id, updatedAction)
+                        },
+                        onAddNewCategory = { newCat, onCreated ->
+                            viewModel.addCategory(newCat, onCreated)
+                        }
                     )
                 }
 
@@ -301,8 +314,11 @@ fun ChatAssistantScreen(
 @Composable
 fun ChatMessageItem(
     message: ChatMessage,
+    categories: List<Category>,
     onConfirm: () -> Unit,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
+    onEditAction: (ToolAction) -> Unit,
+    onAddNewCategory: (Category, (Category) -> Unit) -> Unit
 ) {
     when (message.sender) {
         MessageSender.USER -> {
@@ -400,8 +416,11 @@ fun ChatMessageItem(
                                 CreateTransactionCard(
                                     action = action,
                                     cardStatus = message.cardStatus,
+                                    categories = categories,
                                     onConfirm = onConfirm,
-                                    onCancel = onCancel
+                                    onCancel = onCancel,
+                                    onEditAction = onEditAction,
+                                    onAddNewCategory = onAddNewCategory
                                 )
                             }
                             ToolActionType.UPDATE -> {
@@ -420,6 +439,14 @@ fun ChatMessageItem(
                                     onCancel = onCancel
                                 )
                             }
+                            ToolActionType.CREATE_CATEGORY -> {
+                                CreateCategoryCard(
+                                    action = action,
+                                    cardStatus = message.cardStatus,
+                                    onConfirm = onConfirm,
+                                    onCancel = onCancel
+                                )
+                            }
                         }
                     }
                 }
@@ -428,16 +455,32 @@ fun ChatMessageItem(
     }
 }
 
-// 1. Thẻ Xem Trước Thêm Mới Giao Dịch
+// 1. Thẻ Xem Trước Thêm Mới Giao Dịch (Hỗ trợ Sửa trực tiếp trên thẻ)
 @Composable
 fun CreateTransactionCard(
     action: ToolAction,
     cardStatus: CardStatus,
+    categories: List<Category>,
     onConfirm: () -> Unit,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
+    onEditAction: (ToolAction) -> Unit,
+    onAddNewCategory: (Category, (Category) -> Unit) -> Unit
 ) {
     val isIncome = action.transactionType == "INCOME"
     val badgeColor = if (isIncome) Color(0xFF10B981) else Color(0xFFEF4444)
+
+    var isEditing by remember { mutableStateOf(false) }
+    var editAmountText by remember(action.amount) { mutableStateOf(action.amount.toString()) }
+    var editNote by remember(action.note) { mutableStateOf(action.note) }
+    var selectedCategory by remember(action.categoryId, action.categoryName, categories) {
+        mutableStateOf(
+            categories.find { it.id == action.categoryId }
+                ?: categories.find { it.name.equals(action.categoryName, ignoreCase = true) }
+                ?: Category(action.categoryId, action.categoryName, action.transactionType, action.categoryIcon, action.categoryColorHex, 0L)
+        )
+    }
+    var showCategoryPicker by remember { mutableStateOf(false) }
+    var showAddCategoryDialog by remember { mutableStateOf(false) }
 
     Card(
         shape = RoundedCornerShape(16.dp),
@@ -448,41 +491,172 @@ fun CreateTransactionCard(
             .border(1.dp, badgeColor.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = if (isIncome) "THU NHẬP MỚI (+)" else "CHI TIÊU MỚI (-)",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = badgeColor
-                )
-                Text(
-                    text = Formatters.formatVnd(action.amount),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = badgeColor
-                )
-            }
+            if (!isEditing) {
+                // Chế độ xem trước thông thường
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (isIncome) "THU NHẬP MỚI (+)" else "CHI TIÊU MỚI (-)",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = badgeColor
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = Formatters.formatVnd(action.amount),
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = badgeColor
+                        )
+                        if (cardStatus == CardStatus.PENDING) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            IconButton(
+                                onClick = { isEditing = true },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = "Sửa thông tin",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
 
-            Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(text = "Danh mục: ", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-                Text(
-                    text = "${action.categoryIcon} ${action.categoryName}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-
-            if (action.note.isNotBlank()) {
-                Spacer(modifier = Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(text = "Ghi chú: ", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-                    Text(text = action.note, style = MaterialTheme.typography.bodyMedium)
+                    Text(text = "Danh mục: ", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                    Text(
+                        text = "${action.categoryIcon} ${action.categoryName}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                if (action.note.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(text = "Ghi chú: ", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                        Text(text = action.note, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            } else {
+                // Chế độ chỉnh sửa trực tiếp trên thẻ
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "CHỈNH SỬA THẺ XEM TRƯỚC",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = if (isIncome) "THU NHẬP" else "CHI TIÊU",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = badgeColor
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // 1. Sửa số tiền
+                OutlinedTextField(
+                    value = editAmountText,
+                    onValueChange = { editAmountText = it.filter { ch -> ch.isDigit() } },
+                    label = { Text("Số tiền (VNĐ)") },
+                    supportingText = {
+                        val amt = editAmountText.toLongOrNull() ?: 0L
+                        Text(Formatters.formatVnd(amt), color = badgeColor, fontWeight = FontWeight.Bold)
+                    },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // 2. Chọn danh mục
+                OutlinedCard(
+                    onClick = { showCategoryPicker = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(text = "Danh mục: ", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "${selectedCategory.icon} ${selectedCategory.name}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Text("Đổi ▾", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // 3. Sửa ghi chú
+                OutlinedTextField(
+                    value = editNote,
+                    onValueChange = { editNote = it },
+                    label = { Text("Ghi chú") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Nút lưu / hủy sửa
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            editAmountText = action.amount.toString()
+                            editNote = action.note
+                            isEditing = false
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Hủy sửa")
+                    }
+                    Button(
+                        onClick = {
+                            val newAmount = editAmountText.toLongOrNull() ?: action.amount
+                            val updated = action.copy(
+                                amount = newAmount,
+                                categoryId = selectedCategory.id,
+                                categoryName = selectedCategory.name,
+                                categoryIcon = selectedCategory.icon,
+                                categoryColorHex = selectedCategory.colorHex,
+                                note = editNote
+                            )
+                            onEditAction(updated)
+                            isEditing = false
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Lưu thay đổi")
+                    }
                 }
             }
 
@@ -554,6 +728,85 @@ fun CreateTransactionCard(
                 }
             }
         }
+    }
+
+    if (showCategoryPicker) {
+        val filteredCats = categories.filter { it.type == action.transactionType }
+        AlertDialog(
+            onDismissRequest = { showCategoryPicker = false },
+            title = { Text("Chọn danh mục") },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(260.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(filteredCats) { cat ->
+                            Card(
+                                onClick = {
+                                    selectedCategory = cat
+                                    showCategoryPicker = false
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (selectedCategory.id == cat.id || selectedCategory.name.equals(cat.name, ignoreCase = true))
+                                        MaterialTheme.colorScheme.primaryContainer
+                                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(text = cat.icon, fontSize = 20.sp)
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(
+                                        text = cat.name,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    OutlinedButton(
+                        onClick = { showAddCategoryDialog = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("+ Tạo danh mục mới")
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = { showCategoryPicker = false }) {
+                    Text("Đóng")
+                }
+            }
+        )
+    }
+
+    if (showAddCategoryDialog) {
+        EditCategoryDialog(
+            category = null,
+            initialType = action.transactionType,
+            onDismiss = { showAddCategoryDialog = false },
+            onSave = { newCat ->
+                onAddNewCategory(newCat) { created ->
+                    selectedCategory = created
+                    showAddCategoryDialog = false
+                    showCategoryPicker = false
+                }
+            }
+        )
     }
 }
 
@@ -810,6 +1063,143 @@ fun DeleteTransactionCard(
     }
 }
 
+// 4. Thẻ Xem Trước Đề Xuất Tạo Danh Mục Mới
+@Composable
+fun CreateCategoryCard(
+    action: ToolAction,
+    cardStatus: CardStatus,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit
+) {
+    val isIncome = action.transactionType == "INCOME"
+    val badgeColor = if (isIncome) Color(0xFF10B981) else Color(0xFF8B5CF6)
+
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, badgeColor.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "ĐỀ XUẤT TẠO DANH MỤC MỚI",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = badgeColor
+                )
+                Text(
+                    text = if (isIncome) "THU NHẬP (+)" else "CHI TIÊU (-)",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = badgeColor
+                )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(badgeColor.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(text = action.categoryIcon, fontSize = 24.sp)
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = action.categoryName,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (action.categoryBudget > 0) {
+                        Text(
+                            text = "Hạn mức: ${Formatters.formatVnd(action.categoryBudget)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            when (cardStatus) {
+                CardStatus.PENDING -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = onCancel,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.Close, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Hủy")
+                        }
+
+                        Button(
+                            onClick = onConfirm,
+                            modifier = Modifier.weight(1.5f),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = badgeColor)
+                        ) {
+                            Icon(imageVector = Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Xác Nhận Tạo")
+                        }
+                    }
+                }
+
+                CardStatus.CONFIRMED -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFF10B981).copy(alpha = 0.12f))
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "✓ Đã tạo danh mục thành công",
+                            color = Color(0xFF047857),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+
+                CardStatus.CANCELLED -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Đã bỏ qua đề xuất",
+                            color = MaterialTheme.colorScheme.outline,
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 // Bong bóng "Đang suy nghĩ..."
 @Composable
 fun AiThinkingBubble() {
@@ -885,7 +1275,7 @@ fun AiServerConfigDialog(
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
-                    text = "Nhập URL Cloudflare Tunnel (HTTPS) hoặc IP mạng nội bộ của LM Studio:",
+                    text = "Nhập URL ngrok (HTTPS) hoặc IP máy chủ LM Studio (port 1234):",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.outline
                 )
@@ -899,7 +1289,7 @@ fun AiServerConfigDialog(
                         pingResult = null
                     },
                     label = { Text("Server URL") },
-                    placeholder = { Text("https://xxx.trycloudflare.com") },
+                    placeholder = { Text("https://chas-unshaped-jacalyn.ngrok-free.dev") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp)

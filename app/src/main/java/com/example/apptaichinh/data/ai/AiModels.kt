@@ -13,7 +13,8 @@ enum class MessageSender {
 enum class ToolActionType {
     CREATE,
     UPDATE,
-    DELETE
+    DELETE,
+    CREATE_CATEGORY
 }
 
 enum class CardStatus {
@@ -27,13 +28,14 @@ enum class CardStatus {
  */
 data class ToolAction(
     val type: ToolActionType,
-    // Thông tin cho CREATE
+    // Thông tin cho CREATE hoặc CREATE_CATEGORY
     val amount: Long = 0L,
     val transactionType: String = "EXPENSE", // EXPENSE hoặc INCOME
     val categoryId: Long = 0L,
     val categoryName: String = "",
     val categoryIcon: String = "📦",
     val categoryColorHex: String = "#607D8B",
+    val categoryBudget: Long = 0L,
     val note: String = "",
 
     // Thông tin cho UPDATE & DELETE

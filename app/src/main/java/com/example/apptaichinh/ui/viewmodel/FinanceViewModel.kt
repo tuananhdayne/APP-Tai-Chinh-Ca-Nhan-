@@ -132,6 +132,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                     ToolActionType.CREATE -> "Mình đã chuẩn bị thẻ giao dịch mới. Bạn hãy kiểm tra và xác nhận lưu nhé!"
                                     ToolActionType.UPDATE -> "Mình tìm thấy giao dịch cần sửa. Bạn hãy kiểm tra thông tin thay đổi bên dưới:"
                                     ToolActionType.DELETE -> "Cảnh báo: Bạn có chắc chắn muốn xóa giao dịch sau không?"
+                                    ToolActionType.CREATE_CATEGORY -> "Mình đã chuẩn bị đề xuất tạo danh mục mới. Bạn hãy kiểm tra và xác nhận nhé!"
                                 }
                             },
                             toolAction = action,
@@ -207,7 +208,31 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     )
                     _chatMessages.value = _chatMessages.value + confirmNotice
                 }
+
+                ToolActionType.CREATE_CATEGORY -> {
+                    val newCat = Category(
+                        id = 0L,
+                        name = action.categoryName,
+                        type = action.transactionType,
+                        icon = action.categoryIcon,
+                        colorHex = action.categoryColorHex,
+                        budget = action.categoryBudget
+                    )
+                    val id = repository.addCategory(newCat)
+                    val confirmNotice = ChatMessage(
+                        sender = MessageSender.SYSTEM,
+                        text = "✓ Đã tạo thành công danh mục mới: ${action.categoryIcon} ${action.categoryName}!"
+                    )
+                    _chatMessages.value = _chatMessages.value + confirmNotice
+                }
             }
+        }
+    }
+
+    // Cập nhật thông tin Tool Action khi người dùng chỉnh sửa trên thẻ Preview Card
+    fun updateToolAction(messageId: String, updatedAction: ToolAction) {
+        _chatMessages.value = _chatMessages.value.map { msg ->
+            if (msg.id == messageId) msg.copy(toolAction = updatedAction) else msg
         }
     }
 

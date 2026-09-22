@@ -46,6 +46,7 @@ class FinanceDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABA
         const val SETTING_TOTAL_BUDGET = "total_monthly_budget"
         const val SETTING_AI_SERVER_URL = "ai_server_url"
         const val SETTING_AI_MODEL = "ai_model_name"
+        const val DEFAULT_AI_SERVER_URL = "https://chas-unshaped-jacalyn.ngrok-free.dev"
 
         @Volatile
         private var instance: FinanceDatabaseHelper? = null
@@ -75,7 +76,8 @@ class FinanceDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABA
                 Category(0, "Sức khỏe", "EXPENSE", "💊", "#14B8A6", 600000L),
                 Category(0, "Hiếu hỉ", "EXPENSE", "💌", "#F43F5E", 500000L),
                 Category(0, "Tiết kiệm", "EXPENSE", "🏦", "#10B981", 2000000L),
-                Category(0, "Trả nợ", "EXPENSE", "💳", "#64748B", 1000000L)
+                Category(0, "Trả nợ", "EXPENSE", "💳", "#64748B", 1000000L),
+                Category(0, "Khác", "EXPENSE", "📦", "#6B7280", 0L)
             )
         }
     }
@@ -455,10 +457,10 @@ class FinanceDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABA
         cursor.use {
             if (it.moveToFirst()) {
                 val url = it.getString(0)
-                if (url.isNotBlank()) return url
+                if (url.isNotBlank() && !url.contains("10.0.2.2")) return url
             }
         }
-        return "http://10.0.2.2:1234"
+        return DEFAULT_AI_SERVER_URL
     }
 
     fun setAiServerUrl(url: String) {
